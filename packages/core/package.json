@@ -1,0 +1,30 @@
+{
+  "name": "@lpcli/core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Core SDK for LPCLI — Meteora DLMM pool discovery, scoring, and position management",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:e2e": "node --import tsx --test tests/core.e2e.ts",
+    "dev": "node --import tsx --watch tests/core.e2e.ts"
+  },
+  "dependencies": {
+    "@meteora-ag/dlmm": "1.5.4",
+    "@solana/web3.js": "^1.95.0",
+    "@coral-xyz/anchor": "^0.30.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

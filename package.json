@@ -1,0 +1,16 @@
+{
+  "name": "lpcli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CLI-first LP management for Meteora DLMM on Solana",
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter './packages/**' build",
+    "typecheck": "pnpm --filter './packages/**' typecheck",
+    "test:e2e": "pnpm --filter @lpcli/core test:e2e",
+    "dev": "pnpm --filter @lpcli/core dev"
+  }
+}
