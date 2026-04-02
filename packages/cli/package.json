@@ -1,0 +1,28 @@
+{
+  "name": "@lpcli/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CLI for LPCLI — terminal interface for Meteora DLMM",
+  "bin": {
+    "lpcli": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev": "node --import tsx src/index.ts"
+  },
+  "dependencies": {
+    "@lpcli/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

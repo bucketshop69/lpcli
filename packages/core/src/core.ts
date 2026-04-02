@@ -305,40 +305,247 @@ export class MeteoraClient {
 // Wallet Service
 // ============================================================================
 
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js';
+
 export interface WalletOptions {
   rpcUrl: string;
-  privateKey?: string; // base58 encoded or file path
+  privateKey?: string;   // base58 encoded or file path
+  owsWalletName?: string; // OWS wallet name (takes priority over privateKey)
+}
+
+// Internal signer interface — allows OWS or keypair backends behind the same surface
+interface WalletBackend {
+  publicKey: PublicKey;
+  signTransaction(tx: Transaction): Promise<Transaction>;
+}
+
+// OWS backend — wraps @open-wallet-standard/core when installed
+class OWSBackend implements WalletBackend {
+  publicKey: PublicKey;
+  private walletName: string;
+
+  constructor(walletName: string, publicKey: PublicKey) {
+    this.walletName = walletName;
+    this.publicKey = publicKey;
+  }
+
+  async signTransaction(tx: Transaction): Promise<Transaction> {
+    // Use a runtime-only import so TypeScript does not attempt to resolve the
+    // optional peer dependency at compile time.
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const dynamicImport = new Function('specifier', 'return import(specifier)');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ows = await dynamicImport('@open-wallet-standard/core') as any;
+    const txHex = tx.serialize({ requireAllSignatures: false }).toString('hex');
+    const signedHex: string = await ows.signTransaction(this.walletName, 'solana', txHex);
+    const signedBuf = Buffer.from(signedHex, 'hex');
+    return Transaction.from(signedBuf);
+  }
+}
+
+// Keypair backend — raw Solana Keypair (file or base58)
+class KeypairBackend implements WalletBackend {
+  publicKey: PublicKey;
+  private keypair: Keypair;
+
+  constructor(keypair: Keypair) {
+    this.keypair = keypair;
+    this.publicKey = keypair.publicKey;
+  }
+
+  async signTransaction(tx: Transaction): Promise<Transaction> {
+    tx.partialSign(this.keypair);
+    return tx;
+  }
+}
+
+/**
+ * Load a keypair from a JSON file (array of numbers — standard Solana format).
+ * Expands leading ~ to the home directory.
+ */
+function loadKeypairFromFile(filePath: string): Keypair {
+  const resolved = filePath.startsWith('~')
+    ? filePath.replace('~', homedir())
+    : filePath;
+  const json = JSON.parse(readFileSync(resolved, 'utf-8')) as number[];
+  return Keypair.fromSecretKey(Uint8Array.from(json));
+}
+
+/**
+ * Decode a base58-encoded Solana private key string into a Keypair.
+ *
+ * Solana's "private key" in base58 is the full 64-byte secret key
+ * (32-byte seed + 32-byte public key). We use a minimal base58 decoder
+ * so we avoid a hard dependency on the bs58 package at runtime.
+ */
+function keypairFromBase58(encoded: string): Keypair {
+  const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const alphabetMap: Record<string, number> = {};
+  for (let i = 0; i < ALPHABET.length; i++) alphabetMap[ALPHABET[i]] = i;
+
+  let decoded = BigInt(0);
+  for (const char of encoded) {
+    const digit = alphabetMap[char];
+    if (digit === undefined) throw new Error(`Invalid base58 character: ${char}`);
+    decoded = decoded * BigInt(58) + BigInt(digit);
+  }
+
+  // Convert BigInt to a fixed 64-byte array
+  const bytes = new Uint8Array(64);
+  let remaining = decoded;
+  for (let i = 63; i >= 0; i--) {
+    bytes[i] = Number(remaining & BigInt(0xff));
+    remaining >>= BigInt(8);
+  }
+
+  return Keypair.fromSecretKey(bytes);
 }
 
 export class WalletService {
-  // TODO: Implement keypair loading
-  // - If privateKey looks like a file path (starts with ~ or /), read the file
-  // - If it's base58, decode to Keypair
-  // - If undefined, check env.WALLET_PRIVATE_KEY
+  private backend: WalletBackend;
+  private connection: Connection;
 
-  // TODO: Implement Helius priority fee estimation
-  // POST to ${rpcUrl} with method "getPriorityFeeEstimate"
-  // Serialize the transaction, get back { priorityFeeEstimate: number }
-  // Use 'Medium' level for normal ops, 'High' for time-sensitive rebalances
-
-  // TODO: Implement OWSSigner adapter (post-hackathon)
-  // The OWS (@open-wallet-standard/core) integration is a future enhancement.
-  // For hackathon, we use Keypair directly.
-
-  constructor(options: WalletOptions) {
-    // Placeholder: actual implementation below
-    void options;
+  private constructor(backend: WalletBackend, connection: Connection) {
+    this.backend = backend;
+    this.connection = connection;
   }
 
+  /**
+   * Initialise WalletService using the best available backend.
+   *
+   * Detection order:
+   *  1. OWS — if OWS_WALLET_NAME env var is set and @open-wallet-standard/core is installed
+   *  2. Keypair file — if PRIVATE_KEY starts with ~ or /
+   *  3. Keypair base58 — if PRIVATE_KEY is a base58 string
+   *  4. Error — nothing configured
+   *
+   * The options.privateKey param (from LPCLIOptions) is used as a fallback
+   * when PRIVATE_KEY is not set in the environment.
+   */
+  static async init(options: WalletOptions): Promise<WalletService> {
+    const connection = new Connection(options.rpcUrl, 'confirmed');
+
+    // ── 1. OWS backend ──────────────────────────────────────────────────────
+    const owsWalletName = options.owsWalletName ?? process.env['OWS_WALLET_NAME'];
+    if (owsWalletName) {
+      try {
+        // Runtime-only import to avoid compile-time resolution of optional peer dep.
+        // eslint-disable-next-line @typescript-eslint/no-implied-eval
+        const dynamicImport = new Function('specifier', 'return import(specifier)');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ows = await dynamicImport('@open-wallet-standard/core') as any;
+        const wallets: unknown[] = await ows.listWallets();
+        const wallet = wallets.find(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (w: any) => w.name === owsWalletName
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ) as any;
+        if (!wallet) {
+          throw new Error(`OWS wallet "${owsWalletName}" not found. Run: ows wallet create --name ${owsWalletName}`);
+        }
+        // OWS wallet has accounts[] per chain — find the Solana one
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const solanaAccount = (wallet.accounts as any[]).find(
+          (a: any) => typeof a.chainId === 'string' && a.chainId.startsWith('solana:')
+        );
+        if (!solanaAccount) {
+          throw new Error(`OWS wallet "${owsWalletName}" has no Solana account.`);
+        }
+        const pubkey = new PublicKey(solanaAccount.address as string);
+        const backend = new OWSBackend(owsWalletName, pubkey);
+        return new WalletService(backend, connection);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        // If OWS is simply not installed, fall through to keypair backends
+        if (message.includes('Cannot find') || message.includes('ERR_MODULE_NOT_FOUND') || message.includes('MODULE_NOT_FOUND')) {
+          // OWS package not installed — silently fall through
+        } else {
+          // OWS is installed but configuration failed — propagate
+          throw err;
+        }
+      }
+    }
+
+    // ── 2 & 3. Keypair backends ──────────────────────────────────────────────
+    const privateKeyEnv = process.env['PRIVATE_KEY'] ?? options.privateKey;
+    if (privateKeyEnv) {
+      if (privateKeyEnv.startsWith('~') || privateKeyEnv.startsWith('/')) {
+        // File path backend
+        const keypair = loadKeypairFromFile(privateKeyEnv);
+        return new WalletService(new KeypairBackend(keypair), connection);
+      } else {
+        // base58 string backend
+        const keypair = keypairFromBase58(privateKeyEnv);
+        return new WalletService(new KeypairBackend(keypair), connection);
+      }
+    }
+
+    // ── 4. Nothing configured ────────────────────────────────────────────────
+    throw new Error(
+      'No wallet configured. Run `lpcli init` to set up.'
+    );
+  }
+
+  /** Return the wallet's Solana public key. */
+  getPublicKey(): PublicKey {
+    return this.backend.publicKey;
+  }
+
+  /** Return the SOL balance in lamports via RPC. */
   async getBalance(): Promise<number> {
-    // TODO: Connect to RPC, fetch balance for the loaded keypair
-    return 0;
+    return this.connection.getBalance(this.backend.publicKey);
   }
 
-  async getPriorityFee(_txBase64: string): Promise<number> {
-    // TODO: Call Helius getPriorityFeeEstimate
-    // Default to 'Medium' if not specified
-    return 0;
+  /**
+   * Sign a transaction using whichever backend is active.
+   * Does NOT broadcast — the caller is responsible for sending.
+   */
+  async signTx(tx: Transaction): Promise<Transaction> {
+    return this.backend.signTransaction(tx);
+  }
+
+  /**
+   * Estimate the priority fee for a transaction via Helius.
+   * Falls back to 0 on any failure (network, auth, parse, etc.).
+   *
+   * @param txBase64 - base64-encoded serialised transaction
+   * @param level - Helius priority level (default: "Medium")
+   */
+  async getPriorityFee(
+    txBase64: string,
+    level: 'Min' | 'Low' | 'Medium' | 'High' | 'VeryHigh' | 'UnsafeMax' = 'Medium'
+  ): Promise<number> {
+    try {
+      const response = await fetch(this.connection.rpcEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getPriorityFeeEstimate',
+          params: [
+            {
+              transaction: txBase64,
+              options: { priorityLevel: level },
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) return 0;
+
+      const json = (await response.json()) as {
+        result?: { priorityFeeEstimate?: number };
+        error?: unknown;
+      };
+
+      if (json.error || json.result?.priorityFeeEstimate === undefined) return 0;
+      return json.result.priorityFeeEstimate;
+    } catch {
+      return 0;
+    }
   }
 }
 
@@ -346,29 +553,135 @@ export class WalletService {
 // DLMM Service (SDK Wrapper)
 // ============================================================================
 
+// SDK note: @meteora-ag/dlmm@1.5.4 ships a CJS bundle with no `exports` field.
+// Under NodeNext + esModuleInterop, `import default` is typed as the module
+// namespace, hiding the class methods. We import the namespace and re-bind
+// via `any` to recover the class type, then explicitly annotate with the
+// interface we need to call the static methods.
+import type { LbPosition, PositionInfo } from '@meteora-ag/dlmm';
+import { StrategyType, getPriceOfBinByBinId } from '@meteora-ag/dlmm';
+import anchorPkg from '@coral-xyz/anchor';
+import type { BN as BNType } from '@coral-xyz/anchor';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const BN = (anchorPkg as any).BN as new (value: number | string) => BNType;
+
+// Lazy async loader for the CJS DLMM SDK — avoids require() in ESM context.
+type DLMMClassType = {
+  create(connection: Connection, pool: PublicKey, opt?: { cluster?: string }): Promise<DLMMInstance>;
+  getAllLbPairPositionsByUser(
+    connection: Connection,
+    userPubKey: PublicKey,
+    opt?: { cluster?: string }
+  ): Promise<Map<string, PositionInfo>>;
+};
+let _dlmmClass: DLMMClassType | null = null;
+async function getDLMM(): Promise<DLMMClassType> {
+  if (_dlmmClass) return _dlmmClass;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const m = (await import('@meteora-ag/dlmm')) as any;
+  _dlmmClass = (m.default ?? m) as DLMMClassType;
+  return _dlmmClass;
+}
+
+// The instance type returned by DLMMClass.create — subset we actually use.
+interface DLMMInstance {
+  lbPair: {
+    activeId: number;
+    binStep: number;
+  };
+  tokenX: { mint: { address: PublicKey } };
+  tokenY: { mint: { address: PublicKey } };
+  getActiveBin(): Promise<{ binId: number; price: string }>;
+  initializePositionAndAddLiquidityByStrategy(params: {
+    positionPubKey: PublicKey;
+    totalXAmount: BNType;
+    totalYAmount: BNType;
+    strategy: { minBinId: number; maxBinId: number; strategyType: StrategyType };
+    user: PublicKey;
+    slippage?: number;
+  }): Promise<Transaction>;
+  removeLiquidity(params: {
+    user: PublicKey;
+    position: PublicKey;
+    fromBinId: number;
+    toBinId: number;
+    bps: BNType;
+    shouldClaimAndClose?: boolean;
+  }): Promise<Transaction | Transaction[]>;
+  claimSwapFee(params: {
+    owner: PublicKey;
+    position: LbPosition;
+  }): Promise<Transaction | null>;
+}
+
 export interface DLMMServiceOptions {
   rpcUrl: string;
   wallet: WalletService;
   cluster: 'mainnet' | 'devnet';
 }
 
-export class DLMMService {
-  // TODO: Initialize DLMM SDK client with connection + wallet Keypair
+/**
+ * Map our strategy string to the SDK StrategyType enum.
+ * SDK values confirmed from dist/index.d.ts:
+ *   StrategyType.Spot = 0, StrategyType.Curve = 1, StrategyType.BidAsk = 2
+ */
+function toStrategyType(strategy: 'spot' | 'bidask' | 'curve'): StrategyType {
+  switch (strategy) {
+    case 'bidask': return StrategyType.BidAsk;
+    case 'curve':  return StrategyType.Curve;
+    case 'spot':
+    default:       return StrategyType.Spot;
+  }
+}
 
-  constructor(private options: DLMMServiceOptions) {}
+/**
+ * Sign a transaction with the wallet, then send it via the connection.
+ * Wraps send errors in TransactionError; network errors in NetworkError.
+ */
+async function signAndSend(
+  tx: Transaction,
+  wallet: WalletService,
+  connection: Connection
+): Promise<string> {
+  let signed: Transaction;
+  try {
+    signed = await wallet.signTx(tx);
+  } catch (err: unknown) {
+    throw new TransactionError(
+      `Failed to sign transaction: ${err instanceof Error ? err.message : String(err)}`,
+      'SIGN_FAILURE',
+      err
+    );
+  }
+  try {
+    return await connection.sendRawTransaction(signed.serialize());
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Distinguish network-level failures from on-chain rejections
+    if (msg.includes('fetch') || msg.includes('ECONNREFUSED') || msg.includes('timeout')) {
+      throw new NetworkError(`RPC send failed: ${msg}`, err);
+    }
+    throw new TransactionError(`Transaction failed: ${msg}`, 'SEND_FAILURE', err);
+  }
+}
+
+export class DLMMService {
+  constructor(private _options: DLMMServiceOptions) {}
 
   /**
    * Open a new liquidity position.
    *
    * Parameters:
-   * - pool: pool address
-   * - amountX / amountY: amounts to deposit (BN or number in lamports)
-   * - strategy: 'spot' | 'bidask' | 'curve'
-   * - widthBins: number of bins on each side of active bin
-   *   Default: max(10, floor(50 / binStep)) bins — ~50bps price coverage
+   * - pool: pool address (base58 string)
+   * - amountX / amountY: amounts in raw lamports
+   * - strategy: 'spot' | 'bidask' | 'curve'   default: 'spot'
+   * - widthBins: half-width in bins             default: max(10, floor(50/binStep))
    * - type: 'balanced' | 'imbalanced' | 'one_sided_x' | 'one_sided_y'
    *
-   * Returns: { position, rangeLow, rangeHigh, depositedX, depositedY, tx }
+   * SDK method: initializePositionAndAddLiquidityByStrategy
+   *   — confirmed in dist/index.d.ts line 8103
+   *
+   * Returns: { position, range_low, range_high, deposited_x, deposited_y, tx }
    */
   async openPosition(params: {
     pool: string;
@@ -378,82 +691,320 @@ export class DLMMService {
     widthBins?: number;
     type?: 'balanced' | 'imbalanced' | 'one_sided_x' | 'one_sided_y';
   }): Promise<OpenPositionResult> {
-    // TODO: Implement using @meteora-ag/dlmm SDK
-    // Key questions to answer from SDK source:
-    // - What method for opening a position? (likely depositLiquidityByStrategy)
-    // - What StrategyType enum values? (Spot, BidAsk, Curve)
-    // - Does the method return a Transaction or send it directly?
-    // - What are the required signers?
-    void params;
-    throw new Error('TODO: implement openPosition');
+    const connection = new Connection(this._options.rpcUrl, 'confirmed');
+    const wallet = this._options.wallet;
+    const userPubKey = wallet.getPublicKey();
+
+    let dlmm: DLMMInstance;
+    try {
+      dlmm = await (await getDLMM()).create(connection, new PublicKey(params.pool), {
+        cluster: this._options.cluster,
+      });
+    } catch (err: unknown) {
+      throw new NetworkError(`Failed to load pool ${params.pool}: ${err instanceof Error ? err.message : String(err)}`, err);
+    }
+
+    // Get current active bin to centre our range
+    const activeBin = await dlmm.getActiveBin();
+    const activeBinId = activeBin.binId;
+    const binStep: number = dlmm.lbPair.binStep;
+
+    // Default width: max(10, floor(50 / binStep))
+    const halfWidth = params.widthBins ?? Math.max(10, Math.floor(50 / binStep));
+    const minBinId = activeBinId - halfWidth;
+    const maxBinId = activeBinId + halfWidth;
+
+    const strategyType = toStrategyType(params.strategy ?? 'spot');
+
+    // For one-sided positions, only supply one amount
+    const amountX = new BN(params.amountX ?? 0);
+    const amountY = new BN(params.amountY ?? 0);
+
+    // Each position needs its own keypair — the position pubkey is the account being created
+    const positionKeypair = Keypair.generate();
+
+    const tx = await dlmm.initializePositionAndAddLiquidityByStrategy({
+      positionPubKey: positionKeypair.publicKey,
+      totalXAmount: amountX,
+      totalYAmount: amountY,
+      strategy: { minBinId, maxBinId, strategyType },
+      user: userPubKey,
+      slippage: 1, // 1% default slippage
+    });
+
+    // The position keypair must also sign (it's the account being initialised)
+    tx.partialSign(positionKeypair);
+
+    const txSig = await signAndSend(tx, wallet, connection);
+
+    // Derive range prices from bin IDs
+    const rangeLow = parseFloat(getPriceOfBinByBinId(minBinId, binStep).toString());
+    const rangeHigh = parseFloat(getPriceOfBinByBinId(maxBinId, binStep).toString());
+
+    return {
+      position: positionKeypair.publicKey.toBase58(),
+      range_low: rangeLow,
+      range_high: rangeHigh,
+      deposited_x: params.amountX ?? 0,
+      deposited_y: params.amountY ?? 0,
+      tx: txSig,
+    };
   }
 
   /**
-   * Close a position (withdraw 100% + claim fees in one flow).
+   * Close a position (withdraw 100% liquidity + claim fees).
    *
-   * Two steps under the hood: removeLiquidity + claimFees.
-   * May be combined into a single transaction by the SDK.
+   * Uses SDK removeLiquidity with shouldClaimAndClose=true.
+   * SDK method: removeLiquidity — confirmed in dist/index.d.ts line 8157
+   * bps: BN(10000) = 100%
    *
-   * Returns: { withdrawnX, withdrawnY, claimedFeesX, claimedFeesY, tx }
+   * Returns: { withdrawn_x, withdrawn_y, claimed_fees_x, claimed_fees_y, tx }
    */
-  async closePosition(position: string): Promise<ClosePositionResult> {
-    // TODO: Implement using @meteora-ag/dlmm SDK
-    // likely: removeLiquidity(position, 10000 bps) + claimFee(position)
-    void position;
-    throw new Error('TODO: implement closePosition');
+  async closePosition(positionAddress: string): Promise<ClosePositionResult> {
+    const connection = new Connection(this._options.rpcUrl, 'confirmed');
+    const wallet = this._options.wallet;
+    const userPubKey = wallet.getPublicKey();
+
+    const positionPubKey = new PublicKey(positionAddress);
+
+    // We need to find which pool this position belongs to.
+    // getAllLbPairPositionsByUser returns a Map<lbPairAddress, PositionInfo>
+    let positionInfo: PositionInfo | undefined;
+    let lbPosition: LbPosition | undefined;
+
+    let allPositions: Map<string, PositionInfo>;
+    try {
+      allPositions = await (await getDLMM()).getAllLbPairPositionsByUser(connection, userPubKey, {
+        cluster: this._options.cluster,
+      });
+    } catch (err: unknown) {
+      throw new NetworkError(`Failed to fetch positions: ${err instanceof Error ? err.message : String(err)}`, err);
+    }
+
+    for (const [, info] of allPositions) {
+      const match = info.lbPairPositionsData.find(
+        (p) => p.publicKey.toBase58() === positionAddress
+      );
+      if (match) {
+        positionInfo = info;
+        lbPosition = match;
+        break;
+      }
+    }
+
+    if (!positionInfo || !lbPosition) {
+      throw new TransactionError(
+        `Position ${positionAddress} not found for this wallet`,
+        'POSITION_NOT_FOUND'
+      );
+    }
+
+    const dlmm = await (await getDLMM()).create(connection, positionInfo.publicKey, {
+      cluster: this._options.cluster,
+    });
+
+    const posData = lbPosition.positionData;
+
+    // removeLiquidity with shouldClaimAndClose=true removes all liquidity + closes
+    const txOrTxs = await dlmm.removeLiquidity({
+      user: userPubKey,
+      position: positionPubKey,
+      fromBinId: posData.lowerBinId,
+      toBinId: posData.upperBinId,
+      bps: new BN(10_000), // 100%
+      shouldClaimAndClose: true,
+    });
+
+    // SDK may return a single Transaction or an array
+    const txs = Array.isArray(txOrTxs) ? txOrTxs : [txOrTxs];
+    let lastSig = '';
+    for (const tx of txs) {
+      lastSig = await signAndSend(tx, wallet, connection);
+    }
+
+    return {
+      withdrawn_x: parseFloat(posData.totalXAmount),
+      withdrawn_y: parseFloat(posData.totalYAmount),
+      claimed_fees_x: posData.feeX.toNumber(),
+      claimed_fees_y: posData.feeY.toNumber(),
+      tx: lastSig,
+    };
   }
 
   /**
-   * Get all positions for a wallet.
+   * Get all positions for a wallet address.
    *
-   * Returns positions with:
-   * - Basic info (address, pool, amounts)
-   * - Status: in_range / out_of_range / closed
-   * - P&L (best-effort — may be null if entry price not accessible via SDK)
-   * - Fees earned
+   * Uses DLMM.getAllLbPairPositionsByUser (static method).
+   * Returns [] if wallet has no positions — never throws.
+   *
+   * SDK method: getAllLbPairPositionsByUser — confirmed in dist/index.d.ts line 8842
+   * Return type: Map<string, PositionInfo>
+   *   PositionInfo.lbPairPositionsData: LbPosition[]
+   *   LbPosition.positionData: PositionData
    */
   async getPositions(walletAddress: string): Promise<Position[]> {
-    // TODO: Implement using @meteora-ag/dlmm SDK
-    // Key: find getUserPositions or similar method
-    // Check if SDK exposes entry price for P&L calculation
-    // If not, pnl_usd should be null for positions not opened via LPCLI
-    void walletAddress;
-    throw new Error('TODO: implement getPositions');
+    const connection = new Connection(this._options.rpcUrl, 'confirmed');
+    let allPositions: Map<string, PositionInfo>;
+
+    try {
+      allPositions = await (await getDLMM()).getAllLbPairPositionsByUser(
+        connection,
+        new PublicKey(walletAddress),
+        { cluster: this._options.cluster }
+      );
+    } catch {
+      // Never throw — return empty on any failure
+      return [];
+    }
+
+    if (allPositions.size === 0) return [];
+
+    const results: Position[] = [];
+
+    for (const [lbPairAddress, info] of allPositions) {
+      const binStep: number = info.lbPair.binStep;
+
+      // Determine active bin to compute status — use activeId from the lbPair state
+      // lbPair.activeId is the current active bin
+      const activeBinId: number = info.lbPair.activeId;
+
+      for (const lbPos of info.lbPairPositionsData) {
+        const posData = lbPos.positionData;
+
+        const lowerBin = posData.lowerBinId;
+        const upperBin = posData.upperBinId;
+
+        const status: Position['status'] =
+          activeBinId >= lowerBin && activeBinId <= upperBin
+            ? 'in_range'
+            : 'out_of_range';
+
+        const rangeLow = parseFloat(getPriceOfBinByBinId(lowerBin, binStep).toString());
+        const rangeHigh = parseFloat(getPriceOfBinByBinId(upperBin, binStep).toString());
+        const currentPrice = parseFloat(getPriceOfBinByBinId(activeBinId, binStep).toString());
+
+        // Token symbol from mint (fallback to truncated mint address)
+        const tokenXSymbol = info.tokenX.mint.address.toBase58().slice(0, 4);
+        const tokenYSymbol = info.tokenY.mint.address.toBase58().slice(0, 4);
+        const poolName = `${tokenXSymbol}-${tokenYSymbol}`;
+
+        results.push({
+          address: lbPos.publicKey.toBase58(),
+          pool: lbPairAddress,
+          pool_name: poolName,
+          status,
+          deposited_x: 0, // SDK does not expose original deposit amounts — not tracked
+          deposited_y: 0,
+          current_value_x: parseFloat(posData.totalXAmount),
+          current_value_y: parseFloat(posData.totalYAmount),
+          pnl_usd: null, // Entry price not available from SDK — would need external storage
+          fees_earned_x: posData.feeX.toNumber(),
+          fees_earned_y: posData.feeY.toNumber(),
+          range_low: rangeLow,
+          range_high: rangeHigh,
+          current_price: currentPrice,
+          opened_at: posData.lastUpdatedAt.toNumber(),
+        });
+      }
+    }
+
+    return results;
   }
 
   /**
    * Get detailed info for a single position.
    */
   async getPositionDetail(position: string): Promise<Position> {
-    // TODO: Implement — deep dive with bin distribution, entry price, IL estimate
-    void position;
-    throw new Error('TODO: implement getPositionDetail');
+    // Find it in getPositions — this is the simplest correct approach
+    const wallet = this._options.wallet;
+    const positions = await this.getPositions(wallet.getPublicKey().toBase58());
+    const found = positions.find((p) => p.address === position);
+    if (!found) {
+      throw new TransactionError(`Position ${position} not found`, 'POSITION_NOT_FOUND');
+    }
+    return found;
   }
 
   /**
-   * Claim fees from a position without closing it.
+   * Claim swap fees from a position without removing liquidity.
+   *
+   * SDK method: claimSwapFee — confirmed in dist/index.d.ts line 8281
+   * Returns Transaction | null — null means no fees to claim.
    */
-  async claimFees(position: string): Promise<{ claimedX: number; claimedY: number; tx: string }> {
-    // TODO: Implement using SDK claimFee / claimReward method
-    void position;
-    throw new Error('TODO: implement claimFees');
+  async claimFees(positionAddress: string): Promise<{ claimedX: number; claimedY: number; tx: string }> {
+    const connection = new Connection(this._options.rpcUrl, 'confirmed');
+    const wallet = this._options.wallet;
+    const userPubKey = wallet.getPublicKey();
+
+    // Find the position across all pools
+    let positionInfo: PositionInfo | undefined;
+    let lbPosition: LbPosition | undefined;
+
+    let allPositions: Map<string, PositionInfo>;
+    try {
+      allPositions = await (await getDLMM()).getAllLbPairPositionsByUser(connection, userPubKey, {
+        cluster: this._options.cluster,
+      });
+    } catch (err: unknown) {
+      throw new NetworkError(`Failed to fetch positions: ${err instanceof Error ? err.message : String(err)}`, err);
+    }
+
+    for (const [, info] of allPositions) {
+      const match = info.lbPairPositionsData.find(
+        (p) => p.publicKey.toBase58() === positionAddress
+      );
+      if (match) {
+        positionInfo = info;
+        lbPosition = match;
+        break;
+      }
+    }
+
+    if (!positionInfo || !lbPosition) {
+      throw new TransactionError(
+        `Position ${positionAddress} not found for this wallet`,
+        'POSITION_NOT_FOUND'
+      );
+    }
+
+    const dlmm = await (await getDLMM()).create(connection, positionInfo.publicKey, {
+      cluster: this._options.cluster,
+    });
+
+    const claimedX = lbPosition.positionData.feeX.toNumber();
+    const claimedY = lbPosition.positionData.feeY.toNumber();
+
+    const tx = await dlmm.claimSwapFee({
+      owner: userPubKey,
+      position: lbPosition,
+    });
+
+    if (!tx) {
+      // null means no fees to claim
+      return { claimedX: 0, claimedY: 0, tx: '' };
+    }
+
+    const txSig = await signAndSend(tx, wallet, connection);
+    return { claimedX, claimedY, tx: txSig };
   }
 
   /**
    * Add liquidity to an existing position.
+   * SDK method: addLiquidityByStrategy
    */
   async addLiquidity(params: {
     position: string;
     amountX?: number;
     amountY?: number;
   }): Promise<{ addedX: number; addedY: number; tx: string }> {
-    // TODO: Implement using SDK addLiquidity method
+    // TODO: resolve pool address for the position, then call addLiquidityByStrategy
     void params;
     throw new Error('TODO: implement addLiquidity');
   }
 
   /**
    * Swap tokens within a pool.
+   * SDK method: swap (see dist/index.d.ts line 8247)
    */
   async swap(params: {
     pool: string;
@@ -461,7 +1012,7 @@ export class DLMMService {
     tokenIn: 'x' | 'y';
     slippageBps?: number;
   }): Promise<{ amountOut: number; priceImpact: number; tx: string }> {
-    // TODO: Implement using SDK swap method
+    // TODO: implement using dlmm.swapQuote then dlmm.swap
     void params;
     throw new Error('TODO: implement swap');
   }
@@ -479,13 +1030,46 @@ export interface LPCLIOptions {
 
 export class LPCLI {
   public meteora: MeteoraClient;
-  public wallet: WalletService;
-  public dlmm: DLMMService;
+  /** Lazily initialised — call `getWallet()` to trigger init. */
+  private _wallet: WalletService | undefined;
+  public dlmm: DLMMService | undefined;
+  private _options: LPCLIOptions;
 
   constructor(options: LPCLIOptions) {
+    this._options = options;
     this.meteora = new MeteoraClient({ rpcUrl: options.rpcUrl, cluster: options.cluster });
-    this.wallet = new WalletService({ rpcUrl: options.rpcUrl, privateKey: options.privateKey });
-    this.dlmm = new DLMMService({ rpcUrl: options.rpcUrl, wallet: this.wallet, cluster: options.cluster });
+  }
+
+  /**
+   * Initialise (or return the cached) WalletService.
+   * Throws if no wallet is configured.
+   */
+  async getWallet(): Promise<WalletService> {
+    if (!this._wallet) {
+      this._wallet = await WalletService.init({
+        rpcUrl: this._options.rpcUrl,
+        privateKey: this._options.privateKey,
+      });
+      this.dlmm = new DLMMService({
+        rpcUrl: this._options.rpcUrl,
+        wallet: this._wallet,
+        cluster: this._options.cluster,
+      });
+    }
+    return this._wallet;
+  }
+
+  /**
+   * @deprecated Use `getWallet()` — wallet init is now async.
+   * This accessor throws if the wallet has not yet been initialised.
+   */
+  get wallet(): WalletService {
+    if (!this._wallet) {
+      throw new Error(
+        'Wallet not yet initialised. Call `await lpcli.getWallet()` first.'
+      );
+    }
+    return this._wallet;
   }
 
   /**

@@ -14,13 +14,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import tsx --test tests/wallet.unit.ts",
     "test:e2e": "node --import tsx --test tests/core.e2e.ts",
     "dev": "node --import tsx --watch tests/core.e2e.ts"
   },
   "dependencies": {
+    "@coral-xyz/anchor": "^0.30.0",
     "@meteora-ag/dlmm": "1.5.4",
-    "@solana/web3.js": "^1.95.0",
-    "@coral-xyz/anchor": "^0.30.0"
+    "@open-wallet-standard/core": "^1.2.0",
+    "@solana/web3.js": "^1.95.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
