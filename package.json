@@ -11,6 +11,10 @@
     "build": "pnpm --filter './packages/**' build",
     "typecheck": "pnpm --filter './packages/**' typecheck",
     "test:e2e": "pnpm --filter @lpcli/core test:e2e",
+    "test:e2e:mcp": "pnpm --filter @lpcli/mcp test:e2e",
+    "test:e2e:x402": "pnpm --filter @lpcli/x402 test:e2e",
+    "test:e2e:skills": "pnpm --filter @lpcli/skills test:e2e",
+    "test:e2e:all": "pnpm --filter @lpcli/core test:e2e && pnpm --filter @lpcli/skills test:e2e && pnpm --filter @lpcli/mcp test:e2e && pnpm --filter @lpcli/x402 test:e2e",
     "dev": "pnpm --filter @lpcli/core dev"
   }
 }

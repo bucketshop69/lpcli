@@ -1,0 +1,30 @@
+{
+  "name": "@lpcli/x402",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "x402-gated HTTP server for LPCLI — pay-per-call LP tools for remote agents",
+  "bin": {
+    "lpcli-x402": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:e2e": "node --import tsx --test tests/x402.e2e.ts",
+    "dev": "node --import tsx src/index.ts"
+  },
+  "dependencies": {
+    "@lpcli/core": "workspace:*",
+    "@open-wallet-standard/core": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

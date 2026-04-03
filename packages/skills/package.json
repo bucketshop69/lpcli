@@ -1,0 +1,19 @@
+{
+  "name": "@lpcli/skills",
+  "version": "0.1.0",
+  "description": "Agent knowledge layer — protocol skills for Meteora, Helius, Jupiter, and LPCLI",
+  "main": "./index.js",
+  "scripts": {
+    "test:e2e": "node --import tsx --test tests/skills.e2e.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "@types/node": "^20.0.0"
+  },
+  "files": [
+    "lpcli/",
+    "meteora/",
+    "helius/",
+    "jupiter/"
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "name": "@lpcli/mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "MCP server for LPCLI — exposes Meteora DLMM tools to AI agents",
+  "bin": {
+    "lpcli-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:e2e": "node --import tsx --test tests/mcp.e2e.ts",
+    "dev": "node --import tsx src/index.ts"
+  },
+  "dependencies": {
+    "@lpcli/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

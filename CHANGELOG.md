@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.2.0 — April 3, 2026
+
+Agent economy: x402 payments, MCP server, and skills layer. (Issue #1)
+
+### Added
+
+**`@lpcli/mcp`** — MCP server for AI agents
+- 6 tools: `discover_pools`, `get_pool_info`, `get_positions`, `open_position`, `close_position`, `claim_fees`
+- stdio transport — works with Claude Code (`claude mcp add lpcli npx @lpcli/mcp`), Claude Desktop, any MCP client
+- E2E tests: 5 tests covering handshake, tools/list, live discover, pool info, edge cases
+
+**`@lpcli/x402`** — HTTP server with x402 micropayment gating
+- Free endpoints: `GET /discover`, `GET /pool/:addr`, `GET /positions/:wallet`, `POST /close`, `POST /claim`, `GET /health`
+- Paid endpoint: `POST /open` — returns 402 with payment requirements, verifies `x-402-receipt` header
+- Fee: 2 bps (0.02%) on position size in SOL, paid to treasury wallet
+- `x-402-payment` header base64-encoded for Node HTTP compatibility
+- CORS enabled for browser/agent access
+- E2E tests: 13 tests covering health, CORS, free endpoints, 402 gate, fee scaling, receipt flow, error handling
+
+**`@lpcli/skills`** — Agent knowledge layer
+- `lpcli` skill — tool reference, x402 payment flow, CLI usage, strategy guide
+- `meteora` skill — DLMM bins, strategies, fee mechanics, SDK reference, program addresses (adapted from sendaifun/skills)
+- `helius` skill — priority fees, tx sending, RPC best practices (adapted from sendaifun/skills)
+- `jupiter` skill — price API, swap flow, token verification (adapted from sendaifun/skills)
+- E2E tests: 16 tests validating frontmatter, required sections, tool docs, program addresses, token mints
+
+**OpenClaw skill** — `~/.openclaw/workspace/skills/lpcli/SKILL.md`
+- Teaches OpenClaw to use `lpcli` CLI via `exec` tool
+- Documents all commands, strategies, and setup instructions
+
+**Test infrastructure**
+- `pnpm test:e2e:mcp` — MCP server E2E (node:test + native stdio)
+- `pnpm test:e2e:x402` — x402 server E2E (node:test + native fetch)
+- `pnpm test:e2e:skills` — Skills validation E2E (node:test + fs)
+- `pnpm test:e2e:all` — runs all suites sequentially (34 tests + 6 core = 40 total)
+
+### Changed
+
+- `docs/architecture.md` — updated with MCP, x402, skills architecture, test coverage table
+- `package.json` — added root-level test:e2e:mcp, test:e2e:x402, test:e2e:skills, test:e2e:all scripts
+
+### Fixed
+
+- x402 server: `x-402-payment` header now base64-encoded (Node HTTP rejects raw JSON in headers)
+
+### Branch
+
+`feat/1-agent-economy-x402-mcp-skills` from `main`
+
+---
+
 ## 0.1.0 — April 2, 2026
 
 ### Added
