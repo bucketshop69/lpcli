@@ -40,7 +40,7 @@ export class OWSBackend implements WalletBackend {
 // Keypair backend — raw Solana Keypair (file or base58)
 export class KeypairBackend implements WalletBackend {
   publicKey: PublicKey;
-  private keypair: Keypair;
+  readonly keypair: Keypair;
 
   constructor(keypair: Keypair) {
     this.keypair = keypair;
@@ -196,6 +196,23 @@ export class WalletService {
    */
   async signTx(tx: Transaction): Promise<Transaction> {
     return this.backend.signTransaction(tx);
+  }
+
+  /**
+   * Return the raw Keypair if using a keypair backend.
+   * Throws if using OWS (which doesn't expose the secret key).
+   * Needed for Jupiter Ultra API which requires VersionedTransaction signing.
+   */
+  /**
+   * Return the raw Keypair if using a keypair backend.
+   * Throws if using OWS (which doesn't expose the secret key).
+   * Needed for Jupiter Ultra API which requires VersionedTransaction signing.
+   */
+  getKeypair(): Keypair {
+    if (this.backend instanceof KeypairBackend) {
+      return this.backend.keypair;
+    }
+    throw new Error('getKeypair() is only available with keypair backends, not OWS.');
   }
 
   /**

@@ -74,6 +74,14 @@ interface DLMMInstance {
     user: PublicKey;
     slippage?: number;
   }): Promise<Transaction>;
+  addLiquidityByStrategy(params: {
+    positionPubKey: PublicKey;
+    totalXAmount: BNType;
+    totalYAmount: BNType;
+    strategy: { minBinId: number; maxBinId: number; strategyType: number };
+    user: PublicKey;
+    slippage?: number;
+  }): Promise<Transaction>;
   removeLiquidity(params: {
     user: PublicKey;
     position: PublicKey;
@@ -472,30 +480,83 @@ export class DLMMService {
 
   /**
    * Add liquidity to an existing position.
-   * SDK method: addLiquidityByStrategy
+   *
+   * Finds the position's pool, then calls addLiquidityByStrategy using the
+   * position's existing bin range and the specified strategy.
    */
   async addLiquidity(params: {
     position: string;
     amountX?: number;
     amountY?: number;
+    strategy?: 'spot' | 'bidask' | 'curve';
   }): Promise<{ addedX: number; addedY: number; tx: string }> {
-    // TODO: resolve pool address for the position, then call addLiquidityByStrategy
-    void params;
-    throw new Error('TODO: implement addLiquidity');
+    const sdk = await getSDK();
+    const connection = new Connection(this._options.rpcUrl, 'confirmed');
+    const wallet = this._options.wallet;
+    const userPubKey = wallet.getPublicKey();
+
+    // Find the position and its pool
+    let positionInfo: PositionInfo | undefined;
+    let lbPosition: LbPosition | undefined;
+
+    let allPositions: Map<string, PositionInfo>;
+    try {
+      allPositions = await sdk.dlmm.getAllLbPairPositionsByUser(connection, userPubKey, {
+        cluster: this._options.cluster,
+      });
+    } catch (err: unknown) {
+      throw new NetworkError(`Failed to fetch positions: ${err instanceof Error ? err.message : String(err)}`, err);
+    }
+
+    for (const [, info] of allPositions) {
+      const match = info.lbPairPositionsData.find(
+        (p) => p.publicKey.toBase58() === params.position
+      );
+      if (match) {
+        positionInfo = info;
+        lbPosition = match;
+        break;
+      }
+    }
+
+    if (!positionInfo || !lbPosition) {
+      throw new TransactionError(
+        `Position ${params.position} not found for this wallet`,
+        'POSITION_NOT_FOUND'
+      );
+    }
+
+    const dlmm = await sdk.dlmm.create(connection, positionInfo.publicKey, {
+      cluster: this._options.cluster,
+    });
+
+    const posData = lbPosition.positionData;
+    const strategyType = toStrategyType(params.strategy ?? 'spot');
+
+    const amountX = new sdk.BN(params.amountX ?? 0);
+    const amountY = new sdk.BN(params.amountY ?? 0);
+
+    const tx = await dlmm.addLiquidityByStrategy({
+      positionPubKey: lbPosition.publicKey,
+      totalXAmount: amountX,
+      totalYAmount: amountY,
+      strategy: {
+        minBinId: posData.lowerBinId,
+        maxBinId: posData.upperBinId,
+        strategyType,
+      },
+      user: userPubKey,
+      slippage: 1, // 1%
+    });
+
+    const txSig = await signAndSend(tx, wallet, connection);
+
+    return {
+      addedX: params.amountX ?? 0,
+      addedY: params.amountY ?? 0,
+      tx: txSig,
+    };
   }
 
-  /**
-   * Swap tokens within a pool.
-   * SDK method: swap (see dist/index.d.ts)
-   */
-  async swap(params: {
-    pool: string;
-    amountIn: number;
-    tokenIn: 'x' | 'y';
-    slippageBps?: number;
-  }): Promise<{ amountOut: number; priceImpact: number; tx: string }> {
-    // TODO: implement using dlmm.swapQuote then dlmm.swap
-    void params;
-    throw new Error('TODO: implement swap');
-  }
+  // Swap is handled by Jupiter Ultra API — see jup.ts / jupiterSwap()
 }
