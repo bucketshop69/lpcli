@@ -9,7 +9,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
-import { MeteoraClient, DLMMService, WalletService, LPCLI, rankPools } from '../src/core.js';
+import { MeteoraClient, DLMMService, WalletService, LPCLI, rankPools } from '../src/index.js';
 
 // ---------------------------------------------------------------------------
 // Config

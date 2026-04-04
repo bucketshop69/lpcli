@@ -1,6 +1,8 @@
 /**
  * @lpcli/core public exports
  */
+
+// Types
 export type {
   MeteoraPoolRaw,
   ScoredPool,
@@ -10,17 +12,27 @@ export type {
   ClosePositionResult,
   MeteoraClientOptions,
   WalletOptions,
-  DLMMServiceOptions,
   LPCLIOptions,
   ScoringWeights,
-} from './core.js';
+} from './types.js';
 
-export {
-  LPCLI,
-  MeteoraClient,
-  DLMMService,
-  WalletService,
-  NetworkError,
-  TransactionError,
-  rankPools,
-} from './core.js';
+// DLMMServiceOptions lives in dlmm.ts (it references WalletService)
+export type { DLMMServiceOptions } from './dlmm.js';
+
+// Errors
+export { NetworkError, TransactionError } from './errors.js';
+
+// Scoring
+export { rankPools } from './scoring.js';
+
+// Client
+export { MeteoraClient } from './client.js';
+
+// Wallet
+export { WalletService } from './wallet.js';
+
+// DLMM
+export { DLMMService } from './dlmm.js';
+
+// LPCLI
+export { LPCLI } from './lpcli.js';

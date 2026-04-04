@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 // We call WalletService.init() directly and control which env vars are set.
 // ---------------------------------------------------------------------------
 
-import { WalletService } from '../src/core.js';
+import { WalletService } from '../src/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
