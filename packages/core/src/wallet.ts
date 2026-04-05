@@ -54,9 +54,14 @@ export interface TransferResult {
 // OWS SDK — lazy loaded to avoid hard compile-time dependency
 // ============================================================================
 
+interface OWSSignResult {
+  signature: string;      // Hex-encoded signed transaction
+  recoveryId?: number;
+}
+
 interface OWSSdk {
   getWallet(nameOrId: string): { id: string; name: string; accounts: { chainId: string; address: string }[] };
-  signTransaction(wallet: string, chain: string, txHex: string): string;
+  signTransaction(wallet: string, chain: string, txHex: string): OWSSignResult;
 }
 
 let _ows: OWSSdk | null = null;
@@ -134,8 +139,11 @@ export class WalletService {
   async signTx(tx: Transaction): Promise<Transaction> {
     const ows = await getOWS();
     const txHex = tx.serialize({ requireAllSignatures: false }).toString('hex');
-    const signedHex = ows.signTransaction(this.walletName, 'solana', txHex);
-    return Transaction.from(Buffer.from(signedHex, 'hex'));
+    const result = ows.signTransaction(this.walletName, 'solana', txHex);
+    // OWS returns just the cryptographic signature — apply it to the transaction
+    const sigBytes = Buffer.from(result.signature, 'hex');
+    tx.addSignature(this._publicKey, sigBytes);
+    return tx;
   }
 
   /**
@@ -145,8 +153,11 @@ export class WalletService {
   async signVersionedTx(tx: VersionedTransaction): Promise<VersionedTransaction> {
     const ows = await getOWS();
     const txHex = Buffer.from(tx.serialize()).toString('hex');
-    const signedHex = ows.signTransaction(this.walletName, 'solana', txHex);
-    return VersionedTransaction.deserialize(Buffer.from(signedHex, 'hex'));
+    const result = ows.signTransaction(this.walletName, 'solana', txHex);
+    // OWS returns just the cryptographic signature — apply it to the transaction
+    const sigBytes = Buffer.from(result.signature, 'hex');
+    tx.addSignature(this._publicKey, sigBytes);
+    return tx;
   }
 
   /** Return the underlying Connection (for token account lookups, etc.) */
