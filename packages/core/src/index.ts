@@ -31,6 +31,7 @@ export { rankPools } from './scoring.js';
 export { MeteoraClient } from './client.js';
 
 // Wallet
+export type { TokenBalance, WalletBalances, TransferResult } from './wallet.js';
 export { WalletService } from './wallet.js';
 
 // DLMM

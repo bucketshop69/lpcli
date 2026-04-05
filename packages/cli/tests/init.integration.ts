@@ -41,8 +41,12 @@ function owsInstalled(): boolean {
 }
 
 function deleteOWSWallet(name: string): void {
+  // Safety: never delete a wallet that doesn't have the test prefix
+  if (!name.startsWith('lpcli-test-')) {
+    throw new Error(`Refusing to delete wallet "${name}" — only lpcli-test-* wallets can be deleted by tests`);
+  }
   try {
-    execSync(`ows wallet delete --name "${name}" --force`, { stdio: 'ignore' });
+    execSync(`ows wallet delete --wallet "${name}" --confirm`, { stdio: 'ignore' });
   } catch {
     // wallet may not exist — that's fine
   }

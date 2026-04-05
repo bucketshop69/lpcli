@@ -21,6 +21,7 @@ import { runPositions } from './commands/positions.js';
 import { runOpen }      from './commands/open.js';
 import { runClose }     from './commands/close.js';
 import { runClaim }     from './commands/claim.js';
+import { runWallet }    from './commands/wallet.js';
 
 const [, , command, ...args] = process.argv;
 
@@ -54,6 +55,10 @@ async function main(): Promise<void> {
       await runClaim(args);
       break;
 
+    case 'wallet':
+      await runWallet(args);
+      break;
+
     case undefined:
     case '--help':
     case '-h':
@@ -80,7 +85,10 @@ Usage:
   lpcli open <pool>            Open a new liquidity position
   lpcli close <position>       Close a position and claim fees
   lpcli claim <position>       Claim fees without closing
-  lpcli swap <pool>            Swap tokens in a pool (coming soon)
+  lpcli wallet                 Show wallet address + balances
+  lpcli wallet address         Just the address (scriptable)
+  lpcli wallet balance         SOL + all SPL token balances
+  lpcli wallet transfer        Send SOL or tokens to an address
 
 Options:
   --help, -h                   Show this help

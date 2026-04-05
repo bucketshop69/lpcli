@@ -5,7 +5,50 @@
 // No raw private keys — OWS encrypts at rest, decrypts only for signing.
 // ============================================================================
 
-import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
+import {
+  Connection,
+  PublicKey,
+  Transaction,
+  VersionedTransaction,
+  SystemProgram,
+  LAMPORTS_PER_SOL,
+} from '@solana/web3.js';
+import {
+  TOKEN_PROGRAM_ID,
+  getOrCreateAssociatedTokenAccount,
+  createTransferInstruction,
+  getAssociatedTokenAddress,
+} from '@solana/spl-token';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface TokenBalance {
+  mint: string;
+  /** Raw amount in smallest unit (lamports for SOL, etc.) */
+  amount: string;
+  /** Decimal-adjusted balance */
+  uiAmount: number;
+  decimals: number;
+}
+
+export interface WalletBalances {
+  address: string;
+  solBalance: number;
+  /** SOL balance in lamports */
+  solLamports: number;
+  tokens: TokenBalance[];
+}
+
+export interface TransferResult {
+  signature: string;
+  from: string;
+  to: string;
+  amount: number;
+  /** 'SOL' or mint address */
+  token: string;
+}
 
 // ============================================================================
 // OWS SDK — lazy loaded to avoid hard compile-time dependency
@@ -104,6 +147,138 @@ export class WalletService {
     const txHex = Buffer.from(tx.serialize()).toString('hex');
     const signedHex = ows.signTransaction(this.walletName, 'solana', txHex);
     return VersionedTransaction.deserialize(Buffer.from(signedHex, 'hex'));
+  }
+
+  /** Return the underlying Connection (for token account lookups, etc.) */
+  getConnection(): Connection {
+    return this.connection;
+  }
+
+  /**
+   * Get SOL balance + all SPL token balances for this wallet.
+   */
+  async getBalances(): Promise<WalletBalances> {
+    const solLamports = await this.connection.getBalance(this._publicKey);
+
+    const tokenAccounts = await this.connection.getParsedTokenAccountsByOwner(
+      this._publicKey,
+      { programId: TOKEN_PROGRAM_ID }
+    );
+
+    const tokens: TokenBalance[] = tokenAccounts.value
+      .map((ta) => {
+        const info = ta.account.data.parsed.info;
+        return {
+          mint: info.mint as string,
+          amount: info.tokenAmount.amount as string,
+          uiAmount: info.tokenAmount.uiAmount as number,
+          decimals: info.tokenAmount.decimals as number,
+        };
+      })
+      .filter((t) => t.uiAmount > 0);
+
+    return {
+      address: this._publicKey.toBase58(),
+      solBalance: solLamports / LAMPORTS_PER_SOL,
+      solLamports,
+      tokens,
+    };
+  }
+
+  /**
+   * Transfer SOL to another address.
+   * Amount is in SOL (not lamports).
+   */
+  async transferSOL(to: string, amountSol: number): Promise<TransferResult> {
+    const toPubKey = new PublicKey(to);
+    const lamports = Math.round(amountSol * LAMPORTS_PER_SOL);
+
+    const tx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: this._publicKey,
+        toPubkey: toPubKey,
+        lamports,
+      })
+    );
+
+    tx.recentBlockhash = (await this.connection.getLatestBlockhash()).blockhash;
+    tx.feePayer = this._publicKey;
+
+    const signed = await this.signTx(tx);
+    const signature = await this.connection.sendRawTransaction(signed.serialize());
+    await this.connection.confirmTransaction(signature, 'confirmed');
+
+    return {
+      signature,
+      from: this._publicKey.toBase58(),
+      to,
+      amount: amountSol,
+      token: 'SOL',
+    };
+  }
+
+  /**
+   * Transfer SPL tokens to another address.
+   * Amount is in token's smallest unit (raw amount).
+   */
+  async transferToken(params: {
+    to: string;
+    mint: string;
+    amount: number;
+  }): Promise<TransferResult> {
+    const toPubKey = new PublicKey(params.to);
+    const mintPubKey = new PublicKey(params.mint);
+
+    // Get source token account
+    const sourceATA = await getAssociatedTokenAddress(mintPubKey, this._publicKey);
+
+    // Get or create destination token account
+    // We need a payer signer — but OWS doesn't give us a Keypair.
+    // Instead, build the instruction manually assuming the dest ATA exists or
+    // the recipient has already created it. If not, we create it in the same tx.
+    const destATA = await getAssociatedTokenAddress(mintPubKey, toPubKey);
+
+    // Check if dest ATA exists
+    const destAccount = await this.connection.getAccountInfo(destATA);
+
+    const tx = new Transaction();
+
+    if (!destAccount) {
+      // Create associated token account for recipient
+      const { createAssociatedTokenAccountInstruction } = await import('@solana/spl-token');
+      tx.add(
+        createAssociatedTokenAccountInstruction(
+          this._publicKey, // payer
+          destATA,         // ata
+          toPubKey,        // owner
+          mintPubKey       // mint
+        )
+      );
+    }
+
+    tx.add(
+      createTransferInstruction(
+        sourceATA,
+        destATA,
+        this._publicKey,
+        params.amount
+      )
+    );
+
+    tx.recentBlockhash = (await this.connection.getLatestBlockhash()).blockhash;
+    tx.feePayer = this._publicKey;
+
+    const signed = await this.signTx(tx);
+    const signature = await this.connection.sendRawTransaction(signed.serialize());
+    await this.connection.confirmTransaction(signature, 'confirmed');
+
+    return {
+      signature,
+      from: this._publicKey.toBase58(),
+      to: params.to,
+      amount: params.amount,
+      token: params.mint,
+    };
   }
 
   /**

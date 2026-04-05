@@ -81,9 +81,9 @@ export function loadConfig(): LPCLIConfig {
   const wallet = process.env['OWS_WALLET'] ?? file.wallet ?? 'lpcli';
 
   const rpcUrl =
-    process.env['HELIUS_RPC_URL'] ??
-    process.env['SOLANA_RPC_URL'] ??
-    file.rpcUrl ??
+    process.env['HELIUS_RPC_URL'] ||
+    process.env['SOLANA_RPC_URL'] ||
+    file.rpcUrl ||
     DEFAULT_RPC;
 
   const cluster =
