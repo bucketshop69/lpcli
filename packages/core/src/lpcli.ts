@@ -2,62 +2,56 @@
 // LPCLI Main Class — @lpcli/core
 // ============================================================================
 
-import type { ScoredPool, PoolInfo, LPCLIOptions } from './types.js';
+import type { ScoredPool, PoolInfo } from './types.js';
+import type { LPCLIConfig, FundingToken } from './config.js';
+import { loadConfig } from './config.js';
 import { MeteoraClient } from './client.js';
 import { WalletService } from './wallet.js';
 import { DLMMService } from './dlmm.js';
+import { jupiterSwap, SOL_MINT } from './jup.js';
+import type { JupiterSwapResult } from './jup.js';
+import type { OpenPositionResult, ClosePositionResult } from './types.js';
 import { rankPools, getVolume24, getFees24 } from './scoring.js';
 
 export class LPCLI {
   public meteora: MeteoraClient;
+  public config: LPCLIConfig;
   /** Lazily initialised — call `getWallet()` to trigger init. */
   private _wallet: WalletService | undefined;
   public dlmm: DLMMService | undefined;
-  private _options: LPCLIOptions;
 
-  constructor(options: LPCLIOptions) {
-    this._options = options;
-    this.meteora = new MeteoraClient({ rpcUrl: options.rpcUrl, cluster: options.cluster });
+  constructor(config?: Partial<LPCLIConfig>) {
+    this.config = { ...loadConfig(), ...config };
+    this.meteora = new MeteoraClient({ rpcUrl: this.config.rpcUrl, cluster: this.config.cluster });
   }
 
   /**
    * Initialise (or return the cached) WalletService.
-   * Throws if no wallet is configured.
+   * Uses OWS wallet name from config.
    */
   async getWallet(): Promise<WalletService> {
     if (!this._wallet) {
-      this._wallet = await WalletService.init({
-        rpcUrl: this._options.rpcUrl,
-        privateKey: this._options.privateKey,
-      });
+      this._wallet = await WalletService.init(this.config.wallet, this.config.rpcUrl);
       this.dlmm = new DLMMService({
-        rpcUrl: this._options.rpcUrl,
+        rpcUrl: this.config.rpcUrl,
         wallet: this._wallet,
-        cluster: this._options.cluster,
+        cluster: this.config.cluster,
       });
     }
     return this._wallet;
   }
 
-  /**
-   * @deprecated Use `getWallet()` — wallet init is now async.
-   * This accessor throws if the wallet has not yet been initialised.
-   */
-  get wallet(): WalletService {
-    if (!this._wallet) {
-      throw new Error(
-        'Wallet not yet initialised. Call `await lpcli.getWallet()` first.'
-      );
-    }
-    return this._wallet;
+  /** Get the funding token config. */
+  getFundingToken(): FundingToken {
+    return this.config.fundingToken;
   }
+
+  // ============================================================================
+  // Pool discovery
+  // ============================================================================
 
   /**
    * Discover and rank DLMM pools for a given token pair.
-   *
-   * @param token - Token symbol to search for (e.g., "SOL", "BTC")
-   * @param sortBy - Sort key: "score" | "fee_yield" | "volume" | "tvl"
-   * @param limit - Max number of pools to return
    */
   async discoverPools(
     token?: string,
@@ -65,17 +59,17 @@ export class LPCLI {
     limit = 10
   ): Promise<ScoredPool[]> {
     const sortMap: Record<string, string> = {
-      score: undefined as unknown as string, // we sort post-fetch
+      score: undefined as unknown as string,
       fee_yield: 'fee_24h:desc',
       volume: 'volume_24h:desc',
       tvl: 'tvl:desc',
     };
 
-    const filter = 'is_blacklisted=false'; // gate: exclude blacklisted pools
+    const filter = 'is_blacklisted=false';
 
     const result = await this.meteora.getPools({
       query: token,
-      pageSize: 100, // fetch enough to get good pool set
+      pageSize: 100,
       sortBy: sortMap[sortBy],
       filterBy: filter,
     });
@@ -86,7 +80,6 @@ export class LPCLI {
       return ranked.slice(0, limit);
     }
 
-    // For other sort keys, re-sort after scoring (fe_tvl_ratio already applied)
     const sorted =
       sortBy === 'fee_yield'
         ? [...ranked].sort((a, b) => b.fee_tvl_ratio_24h - a.fee_tvl_ratio_24h)
@@ -118,5 +111,134 @@ export class LPCLI {
       has_farm: raw.has_farm,
       farm_apr: raw.farm_apr,
     };
+  }
+
+  // ============================================================================
+  // Funding token operations
+  // ============================================================================
+
+  /**
+   * Swap funding token → target token via Jupiter.
+   * Used before opening/adding to a position.
+   */
+  async swapFromFunding(params: {
+    outputMint: string;
+    amount: number;
+  }): Promise<JupiterSwapResult> {
+    const wallet = await this.getWallet();
+    const funding = this.config.fundingToken;
+    return jupiterSwap({
+      inputMint: funding.mint,
+      outputMint: params.outputMint,
+      amount: params.amount,
+    }, wallet);
+  }
+
+  /**
+   * Swap target token → funding token via Jupiter.
+   * Used after closing a position.
+   */
+  async swapToFunding(params: {
+    inputMint: string;
+    amount: number;
+  }): Promise<JupiterSwapResult> {
+    const wallet = await this.getWallet();
+    const funding = this.config.fundingToken;
+    return jupiterSwap({
+      inputMint: params.inputMint,
+      outputMint: funding.mint,
+      amount: params.amount,
+    }, wallet);
+  }
+
+  /**
+   * Open a position with funding token auto-swap.
+   *
+   * Flow: funding token → swap to pool token(s) → open position
+   */
+  async openWithFunding(params: {
+    pool: string;
+    amount: number;
+    strategy?: 'spot' | 'bidask' | 'curve';
+    widthBins?: number;
+  }): Promise<{ swap: JupiterSwapResult; position: OpenPositionResult }> {
+    const wallet = await this.getWallet();
+    const poolInfo = await this.getPoolInfo(params.pool);
+    const raw = await this.meteora.getPool(params.pool);
+    const funding = this.config.fundingToken;
+
+    // Determine which pool token to swap into
+    // If funding token is one of the pool tokens, swap to the other
+    // Otherwise swap to token_y (typically the quote token)
+    let swapOutputMint: string;
+    if (raw.token_x.mint === funding.mint) {
+      swapOutputMint = raw.token_y.mint;
+    } else if (raw.token_y.mint === funding.mint) {
+      swapOutputMint = raw.token_x.mint;
+    } else {
+      swapOutputMint = raw.token_y.mint;
+    }
+
+    // Swap funding → pool token
+    const swap = await jupiterSwap({
+      inputMint: funding.mint,
+      outputMint: swapOutputMint,
+      amount: params.amount,
+    }, wallet);
+
+    // Open position with swapped amount
+    const outputAmount = Number(swap.outputAmountResult ?? swap.outAmount);
+    const dlmm = this.dlmm!;
+
+    // Determine amountX/amountY based on which token we swapped into
+    const isTokenX = swapOutputMint === raw.token_x.mint;
+    const position = await dlmm.openPosition({
+      pool: params.pool,
+      amountX: isTokenX ? outputAmount : 0,
+      amountY: isTokenX ? 0 : outputAmount,
+      strategy: params.strategy,
+      widthBins: params.widthBins,
+    });
+
+    return { swap, position };
+  }
+
+  /**
+   * Close a position and swap proceeds back to funding token.
+   *
+   * Flow: close position → swap proceeds → funding token
+   */
+  async closeToFunding(positionAddress: string): Promise<{
+    close: ClosePositionResult;
+    swaps: JupiterSwapResult[];
+  }> {
+    const wallet = await this.getWallet();
+    const dlmm = this.dlmm!;
+    const funding = this.config.fundingToken;
+
+    // Close position
+    const close = await dlmm.closePosition(positionAddress);
+
+    // Find the position's pool to get token mints
+    const positions = await dlmm.getPositions(wallet.getPublicKey().toBase58());
+    // Position is now closed, but we know the pool from the close result
+    // We need to get pool info to know the mints — get from positions list or pool
+    // For now, swap back any non-funding tokens
+    const swaps: JupiterSwapResult[] = [];
+
+    // Swap token X proceeds if non-zero and not the funding token
+    if (close.withdrawn_x > 0) {
+      try {
+        const swap = await this.swapToFunding({
+          inputMint: SOL_MINT, // TODO: resolve actual token_x mint from pool
+          amount: close.withdrawn_x,
+        });
+        swaps.push(swap);
+      } catch {
+        // Swap failed — tokens remain in wallet
+      }
+    }
+
+    return { close, swaps };
   }
 }

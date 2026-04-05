@@ -2,6 +2,10 @@
  * @lpcli/core public exports
  */
 
+// Config
+export type { LPCLIConfig, FundingToken } from './config.js';
+export { loadConfig } from './config.js';
+
 // Types
 export type {
   MeteoraPoolRaw,
@@ -11,8 +15,6 @@ export type {
   OpenPositionResult,
   ClosePositionResult,
   MeteoraClientOptions,
-  WalletOptions,
-  LPCLIOptions,
   ScoringWeights,
 } from './types.js';
 

@@ -7,8 +7,7 @@
  * Requires wallet config.
  */
 
-import { LPCLI, WalletService, DLMMService, type Position } from '@lpcli/core';
-import { loadConfig } from '../config.js';
+import { LPCLI, type Position } from '@lpcli/core';
 
 // ---------------------------------------------------------------------------
 // Table renderer — plain string, no external deps
@@ -71,32 +70,18 @@ function renderTable(positions: Position[]): void {
 // ---------------------------------------------------------------------------
 
 export async function runPositions(): Promise<void> {
-  const config = loadConfig();
+  const lpcli = new LPCLI();
 
-  if (!config.rpcUrl) {
-    console.error('Run `lpcli init` first.');
-    process.exit(1);
-  }
-
-  let wallet: WalletService;
+  let wallet;
   try {
-    wallet = await WalletService.init({
-      rpcUrl: config.rpcUrl,
-      privateKey: config.privateKey,
-      owsWalletName: config.owsWalletName,
-    });
+    wallet = await lpcli.getWallet();
   } catch (err: unknown) {
     console.error('Wallet error:', err instanceof Error ? err.message : String(err));
     console.error('Run `lpcli init` to set up your wallet.');
     process.exit(1);
   }
 
-  const dlmm = new DLMMService({
-    rpcUrl: config.rpcUrl,
-    wallet,
-    cluster: config.cluster ?? 'mainnet',
-  });
-
+  const dlmm = lpcli.dlmm!;
   const walletAddress = wallet.getPublicKey().toBase58();
   console.log(`\nFetching positions for ${walletAddress}...\n`);
 

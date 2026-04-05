@@ -33,22 +33,8 @@ const PORT = parseInt(process.env['X402_PORT'] ?? '3402', 10);
 const FEE_BPS = 2; // 2 basis points = 0.02%
 const TREASURY_WALLET = process.env['X402_TREASURY_WALLET'] ?? '';
 
-function getRpcUrl(): string {
-  return process.env['HELIUS_RPC_URL']
-    ?? process.env['SOLANA_RPC_URL']
-    ?? 'https://api.mainnet-beta.solana.com';
-}
-
-function getCluster(): 'mainnet' | 'devnet' {
-  return (process.env['CLUSTER'] as 'mainnet' | 'devnet') ?? 'mainnet';
-}
-
 function createLpcli(): LPCLI {
-  return new LPCLI({
-    rpcUrl: getRpcUrl(),
-    cluster: getCluster(),
-    privateKey: process.env['PRIVATE_KEY'],
-  });
+  return new LPCLI();
 }
 
 // ---------------------------------------------------------------------------

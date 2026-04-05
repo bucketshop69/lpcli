@@ -4,7 +4,7 @@
 
 import { VersionedTransaction } from '@solana/web3.js';
 import { NetworkError, TransactionError } from './errors.js';
-import type { WalletService } from './wallet.js';
+import { WalletService } from './wallet.js';
 
 // ============================================================================
 // Types
@@ -168,17 +168,16 @@ export async function getJupiterQuote(params: {
 }
 
 /**
- * Execute a complete swap: get order → sign → execute.
+ * Execute a complete swap: get order → sign via OWS → execute.
  *
- * Requires a keypair-backed WalletService (not OWS) because Jupiter Ultra API
- * returns VersionedTransaction which needs direct Keypair signing.
+ * Signing goes through WalletService.signVersionedTx() which delegates to OWS.
+ * No raw private keys are exposed.
  */
 export async function jupiterSwap(
   params: JupiterSwapParams,
   wallet: WalletService,
 ): Promise<JupiterSwapResult> {
-  const keypair = wallet.getKeypair();
-  const taker = keypair.publicKey.toBase58();
+  const taker = wallet.getPublicKey().toBase58();
 
   // Step 1: Get order
   const order = await getUltraOrder({
@@ -190,17 +189,17 @@ export async function jupiterSwap(
     referralFeeBps: params.referralFeeBps,
   });
 
-  // Step 2: Deserialize and sign
+  // Step 2: Deserialize, sign via OWS, serialize
   const tx = VersionedTransaction.deserialize(Buffer.from(order.transaction, 'base64'));
-  tx.sign([keypair]);
-  const signedTx = Buffer.from(tx.serialize()).toString('base64');
+  const signedTx = await wallet.signVersionedTx(tx);
+  const signedTxBase64 = Buffer.from(signedTx.serialize()).toString('base64');
 
   // Step 3: Execute via Ultra API
   const result = await withRetry(async () => {
     const res = await fetch(`${ULTRA_API_BASE}/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ signedTransaction: signedTx, requestId: order.requestId }),
+      body: JSON.stringify({ signedTransaction: signedTxBase64, requestId: order.requestId }),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');

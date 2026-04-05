@@ -8,8 +8,7 @@
  */
 
 import { createInterface } from 'node:readline';
-import { WalletService, DLMMService } from '@lpcli/core';
-import { loadConfig } from '../config.js';
+import { LPCLI } from '@lpcli/core';
 
 // ---------------------------------------------------------------------------
 // Readline confirm prompt
@@ -36,30 +35,17 @@ export async function runClaim(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const config = loadConfig();
-  if (!config.rpcUrl) {
-    console.error('Run `lpcli init` first.');
-    process.exit(1);
-  }
-
-  let wallet: WalletService;
+  const lpcli = new LPCLI();
+  let wallet;
   try {
-    wallet = await WalletService.init({
-      rpcUrl: config.rpcUrl,
-      privateKey: config.privateKey,
-      owsWalletName: config.owsWalletName,
-    });
+    wallet = await lpcli.getWallet();
   } catch (err: unknown) {
     console.error('Wallet error:', err instanceof Error ? err.message : String(err));
     console.error('Run `lpcli init` to set up your wallet.');
     process.exit(1);
   }
 
-  const dlmm = new DLMMService({
-    rpcUrl: config.rpcUrl,
-    wallet,
-    cluster: config.cluster ?? 'mainnet',
-  });
+  const dlmm = lpcli.dlmm!;
 
   // Show confirmation prompt
   const rl = createRL();

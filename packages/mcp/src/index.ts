@@ -23,22 +23,8 @@ import { LPCLI } from '@lpcli/core';
 // LPCLI instance — lazily initialised with wallet when needed
 // ---------------------------------------------------------------------------
 
-function getRpcUrl(): string {
-  return process.env['HELIUS_RPC_URL']
-    ?? process.env['SOLANA_RPC_URL']
-    ?? 'https://api.mainnet-beta.solana.com';
-}
-
-function getCluster(): 'mainnet' | 'devnet' {
-  return (process.env['CLUSTER'] as 'mainnet' | 'devnet') ?? 'mainnet';
-}
-
 function createLpcli(): LPCLI {
-  return new LPCLI({
-    rpcUrl: getRpcUrl(),
-    cluster: getCluster(),
-    privateKey: process.env['PRIVATE_KEY'],
-  });
+  return new LPCLI();
 }
 
 // ---------------------------------------------------------------------------

@@ -27,7 +27,7 @@ const [, , command, ...args] = process.argv;
 async function main(): Promise<void> {
   switch (command) {
     case 'init':
-      await runInit();
+      await runInit(args);
       break;
 
     case 'discover':
@@ -72,7 +72,8 @@ function printHelp(): void {
 lpcli — Meteora DLMM liquidity manager
 
 Usage:
-  lpcli init                   First-time wallet and config setup
+  lpcli init                   Interactive wallet and config setup
+  lpcli init --wallet <name>   Non-interactive setup (for agents)
   lpcli discover <token>       Find and rank pools for a token pair
   lpcli pool <address>         Show pool details
   lpcli positions              List your open positions
@@ -86,11 +87,11 @@ Options:
 
 Environment:
   HELIUS_RPC_URL               Helius RPC endpoint
-  OWS_WALLET_NAME              OWS wallet name (takes priority over PRIVATE_KEY)
-  PRIVATE_KEY                  Path to keypair JSON, or base58 secret key
+  OWS_WALLET                   OWS wallet name (default: lpcli)
   CLUSTER                      mainnet | devnet (default: mainnet)
+  FUNDING_TOKEN_MINT           Override funding token mint address
 
-Config: ~/.lpcli/config.json
+Config: ./config.json (project root)
 `);
 }
 

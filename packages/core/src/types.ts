@@ -118,18 +118,6 @@ export interface MeteoraClientOptions {
   cluster: 'mainnet' | 'devnet';
 }
 
-export interface WalletOptions {
-  rpcUrl: string;
-  privateKey?: string;   // base58 encoded or file path
-  owsWalletName?: string; // OWS wallet name (takes priority over privateKey)
-}
-
-export interface LPCLIOptions {
-  rpcUrl: string;
-  cluster: 'mainnet' | 'devnet';
-  privateKey?: string;
-}
-
 export interface ScoringWeights {
   feeYield: number;
   volumeRatio: number;

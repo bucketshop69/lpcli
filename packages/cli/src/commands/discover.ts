@@ -9,7 +9,6 @@
  */
 
 import { LPCLI, type ScoredPool } from '@lpcli/core';
-import { loadConfig } from '../config.js';
 
 // ---------------------------------------------------------------------------
 // Arg parsing helpers
@@ -97,11 +96,7 @@ export async function runDiscover(args: string[]): Promise<void> {
   const topRaw = getFlag(args, '--top');
   const top = topRaw ? parseInt(topRaw, 10) : 10;
 
-  const config = loadConfig();
-  const lpcli = new LPCLI({
-    rpcUrl: config.rpcUrl ?? 'https://api.mainnet-beta.solana.com',
-    cluster: config.cluster ?? 'mainnet',
-  });
+  const lpcli = new LPCLI();
 
   console.log(`\nSearching pools for ${token}...\n`);
 

@@ -8,7 +8,6 @@
  */
 
 import { LPCLI, type PoolInfo } from '@lpcli/core';
-import { loadConfig } from '../config.js';
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
@@ -35,11 +34,7 @@ export async function runPool(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const config = loadConfig();
-  const lpcli = new LPCLI({
-    rpcUrl: config.rpcUrl ?? 'https://api.mainnet-beta.solana.com',
-    cluster: config.cluster ?? 'mainnet',
-  });
+  const lpcli = new LPCLI();
 
   let info: PoolInfo;
   try {
