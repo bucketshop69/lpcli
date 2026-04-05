@@ -66,6 +66,7 @@ describe('lpcli init (non-interactive)', { concurrency: false }, () => {
       const config = JSON.parse(readFileSync(configPath, 'utf-8'));
       assert.strictEqual(config.wallet, 'lpcli');
       assert.strictEqual(config.cluster, 'mainnet');
+      assert.strictEqual(config.rpcUrl, 'https://api.mainnet-beta.solana.com');
       assert.strictEqual(config.fundingToken.symbol, 'USDC');
       assert.strictEqual(config.fundingToken.mint, 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
       assert.strictEqual(config.fundingToken.decimals, 6);

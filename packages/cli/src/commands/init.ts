@@ -23,6 +23,12 @@ import { execSync } from 'node:child_process';
 // ---------------------------------------------------------------------------
 
 const WALLET_NAME = 'lpcli';
+const DEFAULT_RPC = 'https://api.mainnet-beta.solana.com';
+
+const FUNDING_TOKENS = {
+  USDC: { mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', symbol: 'USDC', decimals: 6 },
+  SOL:  { mint: 'So11111111111111111111111111111111111111112', symbol: 'SOL', decimals: 9 },
+} as const;
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -76,11 +82,28 @@ function findOWSWallet(name: string): boolean {
   }
 }
 
+/**
+ * Get the Solana address for a specific OWS wallet by name.
+ * Parses the `ows wallet list` output block-by-block to find the right wallet.
+ */
 function getOWSWalletAddress(name: string): string | null {
   try {
     const output = execSync(`ows wallet list`, { encoding: 'utf-8' });
-    const match = output.match(/solana:[^\s]+\s+\(solana\)\s+→\s+([1-9A-HJ-NP-Za-km-z]{32,44})/);
-    return match ? match[1] : null;
+
+    // Split into wallet blocks (separated by blank lines or "ID:" lines)
+    const blocks = output.split(/\n(?=ID:)/);
+
+    for (const block of blocks) {
+      // Check if this block is for the wallet we want
+      const nameMatch = block.match(/Name:\s+(\S+)/);
+      if (!nameMatch || nameMatch[1] !== name) continue;
+
+      // Extract Solana address from this block
+      const solanaMatch = block.match(/solana:[^\s]+\s+\(solana\)\s+→\s+([1-9A-HJ-NP-Za-km-z]{32,44})/);
+      if (solanaMatch) return solanaMatch[1];
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -92,11 +115,8 @@ function getOWSWalletAddress(name: string): string | null {
 
 function resolveFundingToken(symbol: string): { mint: string; symbol: string; decimals: number } {
   const upper = symbol.toUpperCase();
-  if (upper === 'SOL') {
-    return { mint: 'So11111111111111111111111111111111111111112', symbol: 'SOL', decimals: 9 };
-  }
-  // Default to USDC
-  return { mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', symbol: 'USDC', decimals: 6 };
+  if (upper === 'SOL') return { ...FUNDING_TOKENS.SOL };
+  return { ...FUNDING_TOKENS.USDC };
 }
 
 // ---------------------------------------------------------------------------
@@ -140,7 +160,7 @@ function ensureOWSWallet(): string | null {
 // ---------------------------------------------------------------------------
 
 async function runNonInteractive(args: string[]): Promise<void> {
-  const rpcUrl = getFlag(args, '--rpc') ?? '';
+  const rpcUrl = getFlag(args, '--rpc') ?? DEFAULT_RPC;
   const fundingSymbol = getFlag(args, '--funding-token') ?? 'USDC';
   const cluster = (getFlag(args, '--cluster') ?? 'mainnet') as 'mainnet' | 'devnet';
   const configDir = getFlag(args, '--config-dir') ?? process.cwd();
@@ -186,12 +206,25 @@ async function runInteractive(): Promise<void> {
   }
 
   // RPC
-  const rpcInput = await ask(rl, `\nEnter your Helius RPC URL (press enter for public RPC):\n> `);
-  const rpcUrl = rpcInput || '';
+  const rpcInput = await ask(rl, `\nRPC URL (press enter for public Solana RPC):\n> `);
+  const rpcUrl = rpcInput || DEFAULT_RPC;
 
-  // Funding token
-  const fundingInput = await ask(rl, `\nFunding token [USDC]: `);
-  const fundingToken = resolveFundingToken(fundingInput || 'USDC');
+  // Funding token — explain + numbered choice
+  console.log(`
+Funding token is the token lpcli uses as your "home base" currency.
+When you open a position, lpcli auto-swaps from this token into the pool.
+When you close, it swaps back. Choose one:
+
+  1. USDC (recommended)
+  2. SOL`);
+
+  let fundingToken: { mint: string; symbol: string; decimals: number };
+  const fundingChoice = await ask(rl, `\n> `);
+  if (fundingChoice === '2' || fundingChoice.toUpperCase() === 'SOL') {
+    fundingToken = resolveFundingToken('SOL');
+  } else {
+    fundingToken = resolveFundingToken('USDC');
+  }
 
   const config = {
     wallet: WALLET_NAME,
@@ -213,6 +246,7 @@ async function runInteractive(): Promise<void> {
 
   console.log(`\nConfig saved to ${configPath}`);
   if (owsAddress) console.log(`  Wallet: ${WALLET_NAME} (${owsAddress})`);
+  console.log(`  RPC: ${rpcUrl}`);
   console.log(`  Funding token: ${fundingToken.symbol}`);
   console.log("  Ready. Run `lpcli discover SOL` to get started.\n");
 
