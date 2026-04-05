@@ -14,7 +14,7 @@
  */
 
 import { createInterface } from 'node:readline';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -120,11 +120,32 @@ function resolveFundingToken(symbol: string): { mint: string; symbol: string; de
 }
 
 // ---------------------------------------------------------------------------
-// Config write
+// Config + .env write
 // ---------------------------------------------------------------------------
 
 function saveConfig(configPath: string, config: object): void {
   writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+}
+
+/**
+ * Write or update a key in the .env file next to config.json.
+ * Preserves existing entries.
+ */
+function saveEnvVar(configDir: string, key: string, value: string): void {
+  const envPath = resolve(configDir, '.env');
+  let lines: string[] = [];
+
+  if (existsSync(envPath)) {
+    lines = readFileSync(envPath, 'utf-8').split('\n');
+    // Remove existing line for this key
+    lines = lines.filter((l) => !l.startsWith(`${key}=`));
+  }
+
+  lines.push(`${key}=${value}`);
+
+  // Remove trailing blank lines, then add final newline
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  writeFileSync(envPath, lines.join('\n') + '\n', 'utf-8');
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +181,7 @@ function ensureOWSWallet(): string | null {
 // ---------------------------------------------------------------------------
 
 async function runNonInteractive(args: string[]): Promise<void> {
-  const rpcUrl = getFlag(args, '--rpc') ?? DEFAULT_RPC;
+  const rpcUrl = getFlag(args, '--rpc');
   const fundingSymbol = getFlag(args, '--funding-token') ?? 'USDC';
   const cluster = (getFlag(args, '--cluster') ?? 'mainnet') as 'mainnet' | 'devnet';
   const configDir = getFlag(args, '--config-dir') ?? process.cwd();
@@ -175,8 +196,12 @@ async function runNonInteractive(args: string[]): Promise<void> {
   const address = ensureOWSWallet();
   const fundingToken = resolveFundingToken(fundingSymbol);
 
-  const config = { wallet: WALLET_NAME, cluster, rpcUrl, fundingToken };
+  const config = { wallet: WALLET_NAME, cluster, fundingToken, feeReserveSol: 0.02 };
   saveConfig(configPath, config);
+
+  // RPC URL always goes to .env (keeps API keys out of config.json)
+  saveEnvVar(configDir, 'RPC_URL', rpcUrl ?? DEFAULT_RPC);
+  console.log(`RPC URL saved to .env`);
 
   console.log(`Config saved to ${configPath}`);
   if (address) console.log(`  Wallet: ${WALLET_NAME} (${address})`);
@@ -205,8 +230,8 @@ async function runInteractive(): Promise<void> {
     owsAddress = ensureOWSWallet();
   }
 
-  // RPC
-  const rpcInput = await ask(rl, `\nRPC URL (press enter for public Solana RPC):\n> `);
+  // RPC — saved to .env, not config.json
+  const rpcInput = await ask(rl, `\nRPC URL (saved to .env, press enter for public Solana RPC):\n> `);
   const rpcUrl = rpcInput || DEFAULT_RPC;
 
   // Funding token — explain + numbered choice
@@ -229,8 +254,8 @@ When you close, it swaps back. Choose one:
   const config = {
     wallet: WALLET_NAME,
     cluster: 'mainnet' as const,
-    rpcUrl,
     fundingToken,
+    feeReserveSol: 0.02,
   };
 
   if (existsSync(configPath)) {
@@ -244,9 +269,13 @@ When you close, it swaps back. Choose one:
 
   saveConfig(configPath, config);
 
+  // RPC URL always → .env (keeps API keys out of version control)
+  const configDir = resolve(configPath, '..');
+  saveEnvVar(configDir, 'RPC_URL', rpcUrl);
+
   console.log(`\nConfig saved to ${configPath}`);
   if (owsAddress) console.log(`  Wallet: ${WALLET_NAME} (${owsAddress})`);
-  console.log(`  RPC: ${rpcUrl}`);
+  console.log(`  RPC: ${rpcUrl} (in .env)`);
   console.log(`  Funding token: ${fundingToken.symbol}`);
   console.log("  Ready. Run `lpcli discover SOL` to get started.\n");
 

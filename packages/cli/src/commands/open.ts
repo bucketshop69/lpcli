@@ -1,15 +1,25 @@
 /**
- * `lpcli open <pool>` — open a new liquidity position.
+ * `lpcli open <pool>` — open a new liquidity position with auto-swap.
  *
  * Usage:
- *   lpcli open <pool_address> --amount 5 [--strategy spot|bidask|curve] [--bins N]
- *   lpcli open <pool_address> --amount-x 2 --amount-y 150 --strategy bidask
+ *   lpcli open <pool_address> --amount 200
+ *     Opens a balanced (50/50) position. --amount is in funding token units
+ *     (e.g. 200 = 200 USDC if funding token is USDC).
+ *     Automatically swaps funding token into both pool tokens as needed.
  *
- * Requires wallet config. Shows confirmation prompt before sending.
+ *   lpcli open <pool_address> --amount 200 --ratio 0.7
+ *     70% token X, 30% token Y (for asymmetric strategies).
+ *
+ *   lpcli open <pool_address> --amount 200 --strategy bidask --bins 20
+ *
+ * The --amount flag uses the funding token from config.json.
+ * For raw control, use --amount-x and --amount-y (in lamports/raw units)
+ * to skip the auto-swap and deposit exact amounts.
  */
 
 import { createInterface } from 'node:readline';
-import { LPCLI, type OpenPositionResult } from '@lpcli/core';
+import { LPCLI } from '@lpcli/core';
+import type { FundedOpenResult, OpenPositionResult } from '@lpcli/core';
 
 // ---------------------------------------------------------------------------
 // Arg parsing helpers
@@ -21,7 +31,7 @@ function getFlag(args: string[], flag: string): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Readline confirm prompt — same pattern as init.ts
+// Readline confirm prompt
 // ---------------------------------------------------------------------------
 
 function createRL() {
@@ -35,27 +45,23 @@ function ask(rl: ReturnType<typeof createRL>, question: string): Promise<string>
 }
 
 // ---------------------------------------------------------------------------
-// Lamport conversion: 1 SOL = 1e9 lamports
-// ---------------------------------------------------------------------------
-const LAMPORTS_PER_SOL = 1_000_000_000;
-
-// ---------------------------------------------------------------------------
 // Command entrypoint
 // ---------------------------------------------------------------------------
 
 export async function runOpen(args: string[]): Promise<void> {
   const pool = args[0];
   if (!pool) {
-    console.error('Usage: lpcli open <pool_address> --amount <sol> [--strategy spot|bidask|curve] [--bins N]');
+    console.error('Usage: lpcli open <pool_address> --amount <funding_token_amount> [--ratio 0.5] [--strategy spot|bidask|curve] [--bins N]');
+    console.error('       lpcli open <pool_address> --amount-x <raw> --amount-y <raw>  (skip auto-swap)');
     process.exit(1);
   }
 
-  // Parse amounts — --amount is SOL shorthand (converted to lamports for X)
-  const amountSol  = getFlag(args, '--amount');
-  const amountXRaw = getFlag(args, '--amount-x');
-  const amountYRaw = getFlag(args, '--amount-y');
+  const amountRaw   = getFlag(args, '--amount');
+  const amountXRaw  = getFlag(args, '--amount-x');
+  const amountYRaw  = getFlag(args, '--amount-y');
+  const ratioRaw    = getFlag(args, '--ratio');
   const strategyRaw = getFlag(args, '--strategy') ?? 'spot';
-  const binsRaw = getFlag(args, '--bins');
+  const binsRaw     = getFlag(args, '--bins');
 
   const validStrategies = ['spot', 'bidask', 'curve'] as const;
   type Strategy = typeof validStrategies[number];
@@ -64,26 +70,6 @@ export async function runOpen(args: string[]): Promise<void> {
     process.exit(1);
   }
   const strategy = strategyRaw as Strategy;
-
-  // amountX is provided in lamports (raw), or convert SOL amount
-  let amountX: number | undefined;
-  let amountY: number | undefined;
-
-  if (amountSol !== undefined) {
-    amountX = Math.round(parseFloat(amountSol) * LAMPORTS_PER_SOL);
-  }
-  if (amountXRaw !== undefined) {
-    amountX = parseFloat(amountXRaw);
-  }
-  if (amountYRaw !== undefined) {
-    amountY = parseFloat(amountYRaw);
-  }
-
-  if (amountX === undefined && amountY === undefined) {
-    console.error('Provide at least one of: --amount, --amount-x, --amount-y');
-    process.exit(1);
-  }
-
   const widthBins = binsRaw ? parseInt(binsRaw, 10) : undefined;
 
   const lpcli = new LPCLI();
@@ -96,16 +82,102 @@ export async function runOpen(args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  // ── Funded mode: --amount (auto-swap) ──────────────────────────────────
+
+  if (amountRaw !== undefined) {
+    const funding = lpcli.getFundingToken();
+    const amountUi = parseFloat(amountRaw);
+    if (isNaN(amountUi) || amountUi <= 0) {
+      console.error('--amount must be a positive number');
+      process.exit(1);
+    }
+
+    const ratioX = ratioRaw !== undefined ? parseFloat(ratioRaw) : 0.5;
+    if (isNaN(ratioX) || ratioX < 0 || ratioX > 1) {
+      console.error('--ratio must be between 0.0 and 1.0');
+      process.exit(1);
+    }
+
+    // Convert UI amount to smallest unit for the funding module.
+    const amountSmallest = Math.floor(amountUi * 10 ** funding.decimals);
+
+    // Resolve pool info for the confirmation prompt.
+    const dlmm = lpcli.dlmm!;
+    const poolMeta = await dlmm.getPoolMeta(pool);
+    const balances = await wallet.getBalances();
+
+    const rl = createRL();
+    console.log(`
+Open position on pool ${pool}:
+  Funding token:  ${funding.symbol} (${funding.mint.slice(0, 8)}...)
+  Budget:         ${amountUi} ${funding.symbol}
+  Split ratio:    ${(ratioX * 100).toFixed(0)}% X / ${((1 - ratioX) * 100).toFixed(0)}% Y
+  Strategy:       ${strategy}
+  Bin width:      ${widthBins !== undefined ? String(widthBins) : 'auto'}
+  Pool tokens:    X=${poolMeta.tokenXMint.slice(0, 8)}... / Y=${poolMeta.tokenYMint.slice(0, 8)}...
+  Active price:   ${poolMeta.activePrice.toFixed(6)} (X in Y terms)
+  SOL balance:    ${balances.solBalance.toFixed(4)} SOL (${lpcli.config.feeReserveSol} SOL reserved for fees)
+`);
+
+    const confirm = await ask(rl, 'Confirm? [y/N] ');
+    rl.close();
+
+    if (confirm.toLowerCase() !== 'y') {
+      console.log('Aborted.');
+      process.exit(0);
+    }
+
+    console.log('\nSwapping & opening position...');
+
+    let result: FundedOpenResult;
+    try {
+      result = await lpcli.openWithFunding({
+        pool,
+        amount: amountSmallest,
+        ratioX,
+        strategy,
+        widthBins,
+      });
+    } catch (err: unknown) {
+      console.error('Failed:', err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+
+    console.log(`
+Position opened successfully!
+
+  Position:    ${result.position.position}
+  Range:       ${result.position.range_low.toFixed(6)} — ${result.position.range_high.toFixed(6)}
+  Deposited X: ${result.position.deposited_x}
+  Deposited Y: ${result.position.deposited_y}
+  TX:          ${result.position.tx}
+  Swaps:       ${result.swaps.length} swap(s) executed
+`);
+    return;
+  }
+
+  // ── Raw mode: --amount-x / --amount-y (no auto-swap) ───────────────────
+
+  let amountX: number | undefined;
+  let amountY: number | undefined;
+
+  if (amountXRaw !== undefined) amountX = parseFloat(amountXRaw);
+  if (amountYRaw !== undefined) amountY = parseFloat(amountYRaw);
+
+  if (amountX === undefined && amountY === undefined) {
+    console.error('Provide --amount (funded mode) or --amount-x / --amount-y (raw mode)');
+    process.exit(1);
+  }
+
   const dlmm = lpcli.dlmm!;
 
-  // Show confirmation prompt
   const rl = createRL();
   console.log(`
-Open position on pool ${pool}:
+Open position on pool ${pool} (raw mode):
   Strategy:  ${strategy}
-  Amount X:  ${amountX !== undefined ? amountX : '—'} lamports${amountSol !== undefined ? ` (${amountSol} SOL)` : ''}
-  Amount Y:  ${amountY !== undefined ? amountY : '—'} lamports
-  Bin width: ${widthBins !== undefined ? String(widthBins) : 'default (max(10, floor(50/binStep)))'}
+  Amount X:  ${amountX !== undefined ? amountX : '—'} (raw)
+  Amount Y:  ${amountY !== undefined ? amountY : '—'} (raw)
+  Bin width: ${widthBins !== undefined ? String(widthBins) : 'auto'}
 `);
 
   const confirm = await ask(rl, 'Confirm? [y/N] ');
@@ -135,10 +207,10 @@ Open position on pool ${pool}:
   console.log(`
 Position opened successfully!
 
-  Position: ${result.position}
-  Range:    ${result.range_low.toFixed(6)} — ${result.range_high.toFixed(6)}
-  Deposited X: ${result.deposited_x} lamports
-  Deposited Y: ${result.deposited_y} lamports
-  TX:       ${result.tx}
+  Position:    ${result.position}
+  Range:       ${result.range_low.toFixed(6)} — ${result.range_high.toFixed(6)}
+  Deposited X: ${result.deposited_x} (raw)
+  Deposited Y: ${result.deposited_y} (raw)
+  TX:          ${result.tx}
 `);
 }

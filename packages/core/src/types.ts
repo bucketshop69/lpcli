@@ -96,6 +96,56 @@ export interface PoolInfo {
   farm_apr: number;
 }
 
+/**
+ * On-chain pool metadata resolved from the DLMM SDK.
+ * Used by funding-aware operations to plan swaps and splits.
+ */
+export interface PoolMeta {
+  pool: string;
+  tokenXMint: string;
+  tokenYMint: string;
+  tokenXDecimals: number;
+  tokenYDecimals: number;
+  activeBinId: number;
+  binStep: number;
+  /** Price of token X denominated in token Y (from active bin). */
+  activePrice: number;
+}
+
+/**
+ * Describes a planned or executed swap.
+ */
+export interface SwapStep {
+  inputMint: string;
+  outputMint: string;
+  /** Amount in raw smallest unit. */
+  amount: number;
+}
+
+/**
+ * Result of a funding-aware open: includes swap(s) + position.
+ */
+export interface FundedOpenResult {
+  swaps: import('./jup.js').JupiterSwapResult[];
+  position: OpenPositionResult;
+}
+
+/**
+ * Result of a funding-aware close: includes close + swap-back(s).
+ */
+export interface FundedCloseResult {
+  close: ClosePositionResult;
+  swaps: import('./jup.js').JupiterSwapResult[];
+}
+
+/**
+ * Result of a funding-aware claim: includes claim + swap-back(s).
+ */
+export interface FundedClaimResult {
+  claim: { claimedX: number; claimedY: number; tx: string };
+  swaps: import('./jup.js').JupiterSwapResult[];
+}
+
 export interface OpenPositionResult {
   position: string;
   range_low: number;

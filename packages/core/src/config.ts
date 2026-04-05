@@ -8,6 +8,9 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+// Load .env file if present (Node 20.12+). Silently ignore if missing.
+try { process.loadEnvFile(); } catch { /* no .env — fine */ }
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -27,6 +30,29 @@ export interface LPCLIConfig {
   rpcUrl: string;
   /** Funding token for auto-swap on LP operations */
   fundingToken: FundingToken;
+  /** SOL reserved for transaction fees (in SOL, e.g. 0.02). Never swapped away. */
+  feeReserveSol: number;
+}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/** SOL mint address (native wrapped SOL). */
+export const SOL_MINT = 'So11111111111111111111111111111111111111112';
+
+/** Lamports per SOL. */
+export const LAMPORTS_PER_SOL = 1_000_000_000;
+
+/** Default fee reserve: 0.02 SOL. */
+const DEFAULT_FEE_RESERVE_SOL = 0.02;
+
+/** Position account rent (~0.06 SOL). Refunded on close. Protocol constant, not configurable. */
+export const POSITION_RENT_LAMPORTS = 60_000_000;
+
+/** Convert a SOL fee reserve to lamports. */
+export function feeReserveLamports(config: LPCLIConfig): number {
+  return Math.floor(config.feeReserveSol * LAMPORTS_PER_SOL);
 }
 
 // ============================================================================
@@ -81,7 +107,7 @@ export function loadConfig(): LPCLIConfig {
   const wallet = process.env['OWS_WALLET'] ?? file.wallet ?? 'lpcli';
 
   const rpcUrl =
-    process.env['HELIUS_RPC_URL'] ||
+    process.env['RPC_URL'] ||
     process.env['SOLANA_RPC_URL'] ||
     file.rpcUrl ||
     DEFAULT_RPC;
@@ -104,5 +130,9 @@ export function loadConfig(): LPCLIConfig {
     fundingToken = file.fundingToken ?? DEFAULT_FUNDING_TOKEN;
   }
 
-  return { wallet, cluster, rpcUrl, fundingToken };
+  const feeReserveSol = Number(
+    process.env['FEE_RESERVE_SOL'] ?? file.feeReserveSol ?? DEFAULT_FEE_RESERVE_SOL,
+  );
+
+  return { wallet, cluster, rpcUrl, fundingToken, feeReserveSol };
 }

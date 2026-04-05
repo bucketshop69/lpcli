@@ -1,17 +1,20 @@
 // ============================================================================
 // LPCLI Main Class — @lpcli/core
+//
+// Facade that wires config, wallet, DLMM, Meteora API, and funding ops.
+// CLI commands and agents should go through this class.
 // ============================================================================
 
-import type { ScoredPool, PoolInfo } from './types.js';
+import type { ScoredPool, PoolInfo, FundedOpenResult, FundedCloseResult, FundedClaimResult } from './types.js';
 import type { LPCLIConfig, FundingToken } from './config.js';
 import { loadConfig } from './config.js';
 import { MeteoraClient } from './client.js';
 import { WalletService } from './wallet.js';
 import { DLMMService } from './dlmm.js';
-import { jupiterSwap, SOL_MINT } from './jup.js';
+import { jupiterSwap } from './jup.js';
 import type { JupiterSwapResult } from './jup.js';
-import type { OpenPositionResult, ClosePositionResult } from './types.js';
 import { rankPools, getVolume24, getFees24 } from './scoring.js';
+import { fundedOpen, fundedClose, fundedClaim } from './funding.js';
 
 export class LPCLI {
   public meteora: MeteoraClient;
@@ -101,7 +104,7 @@ export class LPCLI {
       token_x: raw.token_x.symbol,
       token_y: raw.token_y.symbol,
       bin_step: raw.pool_config.bin_step,
-      active_bin: 0, // TODO: get from SDK or derive from current_price
+      active_bin: 0, // resolved on-chain via dlmm.getPoolMeta() when needed
       current_price: raw.current_price,
       tvl: raw.tvl,
       volume_24h: getVolume24(raw.volume),
@@ -114,21 +117,92 @@ export class LPCLI {
   }
 
   // ============================================================================
-  // Funding token operations
+  // Funding-aware LP operations
+  // ============================================================================
+
+  /**
+   * Open a position with automatic funding-token swap.
+   *
+   * Flow: check balances → calculate split → swap → open position.
+   *
+   * @param pool      Pool address.
+   * @param amount    Budget in funding token's smallest unit.
+   * @param ratioX    Fraction for token X (0.0–1.0). Default 0.5 (balanced).
+   * @param strategy  Distribution strategy. Default 'spot'.
+   * @param widthBins Half-width in bins. Default: auto from bin step.
+   */
+  async openWithFunding(params: {
+    pool: string;
+    amount: number;
+    ratioX?: number;
+    strategy?: 'spot' | 'bidask' | 'curve';
+    widthBins?: number;
+  }): Promise<FundedOpenResult> {
+    const wallet = await this.getWallet();
+    return fundedOpen({
+      pool: params.pool,
+      amount: params.amount,
+      config: this.config,
+      wallet,
+      dlmm: this.dlmm!,
+      ratioX: params.ratioX,
+      strategy: params.strategy,
+      widthBins: params.widthBins,
+    });
+  }
+
+  /**
+   * Close a position and swap proceeds back to funding token.
+   *
+   * Flow: close position → check balances → swap pool tokens → funding token.
+   *
+   * @param positionAddress The position to close.
+   * @param pool            The pool address (needed to resolve token mints).
+   */
+  async closeToFunding(positionAddress: string, pool: string): Promise<FundedCloseResult> {
+    const wallet = await this.getWallet();
+    return fundedClose({
+      positionAddress,
+      pool,
+      config: this.config,
+      wallet,
+      dlmm: this.dlmm!,
+    });
+  }
+
+  /**
+   * Claim fees and swap them back to funding token.
+   *
+   * Flow: claim fees → check balances → swap fee tokens → funding token.
+   *
+   * @param positionAddress The position to claim from.
+   * @param pool            The pool address (needed to resolve token mints).
+   */
+  async claimToFunding(positionAddress: string, pool: string): Promise<FundedClaimResult> {
+    const wallet = await this.getWallet();
+    return fundedClaim({
+      positionAddress,
+      pool,
+      config: this.config,
+      wallet,
+      dlmm: this.dlmm!,
+    });
+  }
+
+  // ============================================================================
+  // Low-level swap helpers (kept for direct use / backwards compat)
   // ============================================================================
 
   /**
    * Swap funding token → target token via Jupiter.
-   * Used before opening/adding to a position.
    */
   async swapFromFunding(params: {
     outputMint: string;
     amount: number;
   }): Promise<JupiterSwapResult> {
     const wallet = await this.getWallet();
-    const funding = this.config.fundingToken;
     return jupiterSwap({
-      inputMint: funding.mint,
+      inputMint: this.config.fundingToken.mint,
       outputMint: params.outputMint,
       amount: params.amount,
     }, wallet);
@@ -136,109 +210,16 @@ export class LPCLI {
 
   /**
    * Swap target token → funding token via Jupiter.
-   * Used after closing a position.
    */
   async swapToFunding(params: {
     inputMint: string;
     amount: number;
   }): Promise<JupiterSwapResult> {
     const wallet = await this.getWallet();
-    const funding = this.config.fundingToken;
     return jupiterSwap({
       inputMint: params.inputMint,
-      outputMint: funding.mint,
+      outputMint: this.config.fundingToken.mint,
       amount: params.amount,
     }, wallet);
-  }
-
-  /**
-   * Open a position with funding token auto-swap.
-   *
-   * Flow: funding token → swap to pool token(s) → open position
-   */
-  async openWithFunding(params: {
-    pool: string;
-    amount: number;
-    strategy?: 'spot' | 'bidask' | 'curve';
-    widthBins?: number;
-  }): Promise<{ swap: JupiterSwapResult; position: OpenPositionResult }> {
-    const wallet = await this.getWallet();
-    const poolInfo = await this.getPoolInfo(params.pool);
-    const raw = await this.meteora.getPool(params.pool);
-    const funding = this.config.fundingToken;
-
-    // Determine which pool token to swap into
-    // If funding token is one of the pool tokens, swap to the other
-    // Otherwise swap to token_y (typically the quote token)
-    let swapOutputMint: string;
-    if (raw.token_x.mint === funding.mint) {
-      swapOutputMint = raw.token_y.mint;
-    } else if (raw.token_y.mint === funding.mint) {
-      swapOutputMint = raw.token_x.mint;
-    } else {
-      swapOutputMint = raw.token_y.mint;
-    }
-
-    // Swap funding → pool token
-    const swap = await jupiterSwap({
-      inputMint: funding.mint,
-      outputMint: swapOutputMint,
-      amount: params.amount,
-    }, wallet);
-
-    // Open position with swapped amount
-    const outputAmount = Number(swap.outputAmountResult ?? swap.outAmount);
-    const dlmm = this.dlmm!;
-
-    // Determine amountX/amountY based on which token we swapped into
-    const isTokenX = swapOutputMint === raw.token_x.mint;
-    const position = await dlmm.openPosition({
-      pool: params.pool,
-      amountX: isTokenX ? outputAmount : 0,
-      amountY: isTokenX ? 0 : outputAmount,
-      strategy: params.strategy,
-      widthBins: params.widthBins,
-    });
-
-    return { swap, position };
-  }
-
-  /**
-   * Close a position and swap proceeds back to funding token.
-   *
-   * Flow: close position → swap proceeds → funding token
-   */
-  async closeToFunding(positionAddress: string): Promise<{
-    close: ClosePositionResult;
-    swaps: JupiterSwapResult[];
-  }> {
-    const wallet = await this.getWallet();
-    const dlmm = this.dlmm!;
-    const funding = this.config.fundingToken;
-
-    // Close position
-    const close = await dlmm.closePosition(positionAddress);
-
-    // Find the position's pool to get token mints
-    const positions = await dlmm.getPositions(wallet.getPublicKey().toBase58());
-    // Position is now closed, but we know the pool from the close result
-    // We need to get pool info to know the mints — get from positions list or pool
-    // For now, swap back any non-funding tokens
-    const swaps: JupiterSwapResult[] = [];
-
-    // Swap token X proceeds if non-zero and not the funding token
-    if (close.withdrawn_x > 0) {
-      try {
-        const swap = await this.swapToFunding({
-          inputMint: SOL_MINT, // TODO: resolve actual token_x mint from pool
-          amount: close.withdrawn_x,
-        });
-        swaps.push(swap);
-      } catch {
-        // Swap failed — tokens remain in wallet
-      }
-    }
-
-    return { close, swaps };
   }
 }

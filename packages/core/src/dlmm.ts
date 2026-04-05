@@ -9,7 +9,7 @@
 import type { LbPosition, PositionInfo } from '@meteora-ag/dlmm';
 import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js';
 
-import type { OpenPositionResult, ClosePositionResult, Position } from './types.js';
+import type { OpenPositionResult, ClosePositionResult, Position, PoolMeta } from './types.js';
 import { NetworkError, TransactionError } from './errors.js';
 import type { WalletService } from './wallet.js';
 
@@ -63,8 +63,8 @@ interface DLMMInstance {
     activeId: number;
     binStep: number;
   };
-  tokenX: { mint: { address: PublicKey } };
-  tokenY: { mint: { address: PublicKey } };
+  tokenX: { mint: { address: PublicKey; decimals: number } };
+  tokenY: { mint: { address: PublicKey; decimals: number } };
   getActiveBin(): Promise<{ binId: number; price: string }>;
   initializePositionAndAddLiquidityByStrategy(params: {
     positionPubKey: PublicKey;
@@ -101,6 +101,12 @@ export interface DLMMServiceOptions {
   wallet: WalletService;
   cluster: 'mainnet' | 'devnet';
 }
+
+/** Map our config cluster names to what the DLMM SDK expects. */
+const SDK_CLUSTER: Record<string, string> = {
+  mainnet: 'mainnet-beta',
+  devnet: 'devnet',
+};
 
 /**
  * Map our strategy string to the SDK StrategyType enum value.
@@ -150,6 +156,48 @@ export class DLMMService {
   constructor(private _options: DLMMServiceOptions) {}
 
   /**
+   * Resolve on-chain pool metadata: token mints, active bin, price.
+   * Pure read — no transactions, no signing.
+   */
+  async getPoolMeta(pool: string): Promise<PoolMeta> {
+    const sdk = await getSDK();
+    const connection = new Connection(this._options.rpcUrl, 'confirmed');
+
+    let dlmm: DLMMInstance;
+    try {
+      dlmm = await sdk.dlmm.create(connection, new PublicKey(pool), {
+        cluster: SDK_CLUSTER[this._options.cluster],
+      });
+    } catch (err: unknown) {
+      throw new NetworkError(
+        `Failed to load pool ${pool}: ${err instanceof Error ? err.message : String(err)}`,
+        err,
+      );
+    }
+
+    const activeBin = await dlmm.getActiveBin();
+    const binStep = dlmm.lbPair.binStep;
+
+    // SDK returns a decimal-adjusted price: rawPrice * 10^(Ydec - Xdec).
+    // Normalize to UI price (token X in terms of token Y, human-readable).
+    // e.g. SOL/USDC: SDK returns 0.07936, UI price = 79.36 USDC per SOL.
+    const sdkPrice = parseFloat(activeBin.price);
+    const decimalDiff = dlmm.tokenX.mint.decimals - dlmm.tokenY.mint.decimals;
+    const activePrice = sdkPrice * 10 ** decimalDiff;
+
+    return {
+      pool,
+      tokenXMint: dlmm.tokenX.mint.address.toBase58(),
+      tokenYMint: dlmm.tokenY.mint.address.toBase58(),
+      tokenXDecimals: dlmm.tokenX.mint.decimals,
+      tokenYDecimals: dlmm.tokenY.mint.decimals,
+      activeBinId: activeBin.binId,
+      binStep,
+      activePrice,
+    };
+  }
+
+  /**
    * Open a new liquidity position.
    *
    * Parameters:
@@ -180,7 +228,7 @@ export class DLMMService {
     let dlmm: DLMMInstance;
     try {
       dlmm = await sdk.dlmm.create(connection, new PublicKey(params.pool), {
-        cluster: this._options.cluster,
+        cluster: SDK_CLUSTER[this._options.cluster],
       });
     } catch (err: unknown) {
       throw new NetworkError(`Failed to load pool ${params.pool}: ${err instanceof Error ? err.message : String(err)}`, err);
@@ -258,7 +306,7 @@ export class DLMMService {
     let allPositions: Map<string, PositionInfo>;
     try {
       allPositions = await sdk.dlmm.getAllLbPairPositionsByUser(connection, userPubKey, {
-        cluster: this._options.cluster,
+        cluster: SDK_CLUSTER[this._options.cluster],
       });
     } catch (err: unknown) {
       throw new NetworkError(`Failed to fetch positions: ${err instanceof Error ? err.message : String(err)}`, err);
@@ -283,7 +331,7 @@ export class DLMMService {
     }
 
     const dlmm = await sdk.dlmm.create(connection, positionInfo.publicKey, {
-      cluster: this._options.cluster,
+      cluster: SDK_CLUSTER[this._options.cluster],
     });
 
     const posData = lbPosition.positionData;
@@ -333,7 +381,7 @@ export class DLMMService {
       allPositions = await sdk.dlmm.getAllLbPairPositionsByUser(
         connection,
         new PublicKey(walletAddress),
-        { cluster: this._options.cluster }
+        { cluster: SDK_CLUSTER[this._options.cluster] }
       );
     } catch {
       // Never throw — return empty on any failure
@@ -428,7 +476,7 @@ export class DLMMService {
     let allPositions: Map<string, PositionInfo>;
     try {
       allPositions = await sdk.dlmm.getAllLbPairPositionsByUser(connection, userPubKey, {
-        cluster: this._options.cluster,
+        cluster: SDK_CLUSTER[this._options.cluster],
       });
     } catch (err: unknown) {
       throw new NetworkError(`Failed to fetch positions: ${err instanceof Error ? err.message : String(err)}`, err);
@@ -453,7 +501,7 @@ export class DLMMService {
     }
 
     const dlmm = await sdk.dlmm.create(connection, positionInfo.publicKey, {
-      cluster: this._options.cluster,
+      cluster: SDK_CLUSTER[this._options.cluster],
     });
 
     const claimedX = lbPosition.positionData.feeX.toNumber();
@@ -502,7 +550,7 @@ export class DLMMService {
     let allPositions: Map<string, PositionInfo>;
     try {
       allPositions = await sdk.dlmm.getAllLbPairPositionsByUser(connection, userPubKey, {
-        cluster: this._options.cluster,
+        cluster: SDK_CLUSTER[this._options.cluster],
       });
     } catch (err: unknown) {
       throw new NetworkError(`Failed to fetch positions: ${err instanceof Error ? err.message : String(err)}`, err);
@@ -527,7 +575,7 @@ export class DLMMService {
     }
 
     const dlmm = await sdk.dlmm.create(connection, positionInfo.publicKey, {
-      cluster: this._options.cluster,
+      cluster: SDK_CLUSTER[this._options.cluster],
     });
 
     const posData = lbPosition.positionData;
