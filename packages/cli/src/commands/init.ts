@@ -5,11 +5,10 @@
  *   lpcli init
  *
  * Non-interactive (agent):
- *   lpcli init --wallet my-agent --rpc https://... --funding-token USDC
- *   lpcli init --wallet my-agent                  # defaults: public RPC, USDC
+ *   lpcli init --rpc https://... --funding-token USDC --force
+ *   lpcli init --force                              # defaults: public RPC, USDC
  *
- * Detects existing OWS wallets, creates one if needed, and writes
- * config.json to the project root (cwd or --config-dir).
+ * Wallet is always named "lpcli" — multi-wallet support will come later.
  *
  * OWS-only — no keypair file fallback.
  */
@@ -18,6 +17,12 @@ import { createInterface } from 'node:readline';
 import { existsSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const WALLET_NAME = 'lpcli';
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -103,25 +108,10 @@ function saveConfig(configPath: string, config: object): void {
 }
 
 // ---------------------------------------------------------------------------
-// Non-interactive init (for agents)
+// Ensure OWS + wallet exist
 // ---------------------------------------------------------------------------
 
-async function runNonInteractive(args: string[]): Promise<void> {
-  const walletName = getFlag(args, '--wallet') ?? 'lpcli';
-  const rpcUrl = getFlag(args, '--rpc') ?? '';
-  const fundingSymbol = getFlag(args, '--funding-token') ?? 'USDC';
-  const cluster = (getFlag(args, '--cluster') ?? 'mainnet') as 'mainnet' | 'devnet';
-  const configDir = getFlag(args, '--config-dir') ?? process.cwd();
-  const configPath = resolve(configDir, 'config.json');
-  const force = hasFlag(args, '--force');
-
-  // Check config exists
-  if (existsSync(configPath) && !force) {
-    console.error(`config.json already exists at ${configPath}. Use --force to overwrite.`);
-    process.exit(1);
-  }
-
-  // Ensure OWS is installed
+function ensureOWSWallet(): string | null {
   if (!owsInstalled()) {
     console.log('Installing OWS...');
     try {
@@ -132,25 +122,44 @@ async function runNonInteractive(args: string[]): Promise<void> {
     }
   }
 
-  // Create wallet if it doesn't exist
-  if (!findOWSWallet(walletName)) {
-    console.log(`Creating OWS wallet "${walletName}"...`);
+  if (!findOWSWallet(WALLET_NAME)) {
+    console.log(`Creating OWS wallet "${WALLET_NAME}"...`);
     try {
-      execSync(`ows wallet create --name "${walletName}"`, { stdio: 'inherit' });
+      execSync(`ows wallet create --name "${WALLET_NAME}"`, { stdio: 'inherit' });
     } catch (err) {
       console.error('Failed to create OWS wallet:', err instanceof Error ? err.message : String(err));
       process.exit(1);
     }
   }
 
-  const address = getOWSWalletAddress(walletName);
+  return getOWSWalletAddress(WALLET_NAME);
+}
+
+// ---------------------------------------------------------------------------
+// Non-interactive init (for agents)
+// ---------------------------------------------------------------------------
+
+async function runNonInteractive(args: string[]): Promise<void> {
+  const rpcUrl = getFlag(args, '--rpc') ?? '';
+  const fundingSymbol = getFlag(args, '--funding-token') ?? 'USDC';
+  const cluster = (getFlag(args, '--cluster') ?? 'mainnet') as 'mainnet' | 'devnet';
+  const configDir = getFlag(args, '--config-dir') ?? process.cwd();
+  const configPath = resolve(configDir, 'config.json');
+  const force = hasFlag(args, '--force');
+
+  if (existsSync(configPath) && !force) {
+    console.error(`config.json already exists at ${configPath}. Use --force to overwrite.`);
+    process.exit(1);
+  }
+
+  const address = ensureOWSWallet();
   const fundingToken = resolveFundingToken(fundingSymbol);
 
-  const config = { wallet: walletName, cluster, rpcUrl, fundingToken };
+  const config = { wallet: WALLET_NAME, cluster, rpcUrl, fundingToken };
   saveConfig(configPath, config);
 
   console.log(`Config saved to ${configPath}`);
-  if (address) console.log(`  Wallet: ${walletName} (${address})`);
+  if (address) console.log(`  Wallet: ${WALLET_NAME} (${address})`);
   console.log(`  Cluster: ${cluster}`);
   console.log(`  Funding token: ${fundingToken.symbol}`);
 }
@@ -161,77 +170,31 @@ async function runNonInteractive(args: string[]): Promise<void> {
 
 async function runInteractive(): Promise<void> {
   const rl = createRL();
-  const defaultWalletName = 'lpcli';
   const configPath = resolve(process.cwd(), 'config.json');
 
   console.log('\nChecking for OWS wallet...');
 
-  let ows = owsInstalled();
-  let owsFound = false;
+  const ows = owsInstalled();
   let owsAddress: string | null = null;
-  let walletName = defaultWalletName;
 
-  if (ows) {
-    owsFound = findOWSWallet(defaultWalletName);
-    if (owsFound) {
-      owsAddress = getOWSWalletAddress(defaultWalletName);
-      console.log(`  OWS wallet "${defaultWalletName}" found`);
-      if (owsAddress) console.log(`  Address: ${owsAddress}`);
-    } else {
-      console.log(`  No OWS wallet "${defaultWalletName}" found`);
-    }
+  if (ows && findOWSWallet(WALLET_NAME)) {
+    owsAddress = getOWSWalletAddress(WALLET_NAME);
+    console.log(`  OWS wallet "${WALLET_NAME}" found`);
+    if (owsAddress) console.log(`  Address: ${owsAddress}`);
   } else {
-    console.log('  OWS not installed');
+    owsAddress = ensureOWSWallet();
   }
 
-  if (owsFound && owsAddress) {
-    const confirm = await ask(
-      rl,
-      `\nUse existing OWS wallet "${defaultWalletName}" (${owsAddress})? [Y/n] `
-    );
-    if (confirm !== '' && confirm.toLowerCase() !== 'y') {
-      owsFound = false;
-    }
-  }
-
-  if (!owsFound) {
-    if (!ows) {
-      console.log('\nInstalling OWS...');
-      try {
-        execSync('npm install -g @open-wallet-standard/core', { stdio: 'inherit' });
-        ows = true;
-        console.log('  OWS installed');
-      } catch (err) {
-        console.error('  Failed to install OWS:', err instanceof Error ? err.message : String(err));
-        console.error('\nOWS is required. Install manually: npm install -g @open-wallet-standard/core');
-        rl.close();
-        process.exit(1);
-      }
-    }
-
-    const nameInput = await ask(rl, `\nWallet name [${defaultWalletName}]: `);
-    walletName = nameInput || defaultWalletName;
-
-    console.log(`\nCreating OWS wallet "${walletName}"...`);
-    try {
-      execSync(`ows wallet create --name "${walletName}"`, { stdio: 'inherit' });
-      owsAddress = getOWSWalletAddress(walletName);
-      if (owsAddress) console.log(`  Address: ${owsAddress}`);
-    } catch (err) {
-      console.error('  Failed to create OWS wallet:', err instanceof Error ? err.message : String(err));
-      rl.close();
-      process.exit(1);
-    }
-  }
-
+  // RPC
   const rpcInput = await ask(rl, `\nEnter your Helius RPC URL (press enter for public RPC):\n> `);
   const rpcUrl = rpcInput || '';
 
+  // Funding token
   const fundingInput = await ask(rl, `\nFunding token [USDC]: `);
   const fundingToken = resolveFundingToken(fundingInput || 'USDC');
 
   const config = {
-    wallet: walletName,
+    wallet: WALLET_NAME,
     cluster: 'mainnet' as const,
     rpcUrl,
     fundingToken,
@@ -249,7 +212,7 @@ async function runInteractive(): Promise<void> {
   saveConfig(configPath, config);
 
   console.log(`\nConfig saved to ${configPath}`);
-  if (owsAddress) console.log(`  Wallet: ${walletName} (${owsAddress})`);
+  if (owsAddress) console.log(`  Wallet: ${WALLET_NAME} (${owsAddress})`);
   console.log(`  Funding token: ${fundingToken.symbol}`);
   console.log("  Ready. Run `lpcli discover SOL` to get started.\n");
 
@@ -261,8 +224,13 @@ async function runInteractive(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function runInit(args: string[] = []): Promise<void> {
-  // If --wallet flag is provided, run non-interactive mode
-  const isNonInteractive = hasFlag(args, '--wallet') || hasFlag(args, '--force');
+  // Non-interactive if any flags are provided
+  const isNonInteractive =
+    hasFlag(args, '--force') ||
+    hasFlag(args, '--config-dir') ||
+    hasFlag(args, '--rpc') ||
+    hasFlag(args, '--funding-token') ||
+    hasFlag(args, '--cluster');
 
   if (isNonInteractive) {
     await runNonInteractive(args);

@@ -78,7 +78,7 @@ lpcli — Meteora DLMM liquidity manager
 
 Usage:
   lpcli init                   Interactive wallet and config setup
-  lpcli init --wallet <name>   Non-interactive setup (for agents)
+  lpcli init --force           Non-interactive setup (for agents)
   lpcli discover <token>       Find and rank pools for a token pair
   lpcli pool <address>         Show pool details
   lpcli positions              List your open positions
