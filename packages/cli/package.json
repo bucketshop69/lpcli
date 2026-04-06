@@ -18,6 +18,7 @@
     "dev": "node --import tsx src/index.ts"
   },
   "dependencies": {
+    "@clack/prompts": "^1.2.0",
     "@lpcli/core": "workspace:*"
   },
   "devDependencies": {

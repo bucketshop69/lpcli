@@ -1,5 +1,13 @@
 // ============================================================================
 // DLMM Service (SDK Wrapper) — @lpcli/core
+//
+// Optimised for minimal RPC usage:
+//   - DLMM instances cached per pool address (single DLMM.create per pool)
+//   - refetchStates() for lightweight refreshes (no full re-create)
+//   - Single Connection reused across all methods
+//   - Websocket tx confirmation with automatic polling fallback
+//   - Transaction retries with exponential backoff
+//   - Scoped position lookup when pool is known
 // ============================================================================
 
 // SDK note: @meteora-ag/dlmm@1.9.4 ships a CJS bundle whose ESM entry
@@ -13,20 +21,21 @@ import type { OpenPositionResult, ClosePositionResult, Position, PoolMeta } from
 import { NetworkError, TransactionError } from './errors.js';
 import type { WalletService } from './wallet.js';
 
-// BN type for compile-time use only — value resolved lazily via getSDK()
+// ============================================================================
+// SDK lazy loader
+// ============================================================================
+
 type BNType = { toNumber(): number; toString(): string };
 type BNConstructor = new (value: number | string) => BNType;
 
-// StrategyType enum values (mirrors SDK — Spot=0, Curve=1, BidAsk=2)
-// We define our own to avoid eager SDK import.
 const STRATEGY_TYPE = { Spot: 0, Curve: 1, BidAsk: 2 } as const;
 
-// Lazy async loader — loads DLMM class, BN, and getPriceOfBinByBinId together.
 interface SDKBundle {
   dlmm: DLMMClassType;
   BN: BNConstructor;
   getPriceOfBinByBinId: (binId: number, binStep: number) => { toString(): string };
 }
+
 type DLMMClassType = {
   create(connection: Connection, pool: PublicKey, opt?: { cluster?: string }): Promise<DLMMInstance>;
   getAllLbPairPositionsByUser(
@@ -35,12 +44,11 @@ type DLMMClassType = {
     opt?: { cluster?: string }
   ): Promise<Map<string, PositionInfo>>;
 };
+
 let _sdk: SDKBundle | null = null;
+
 async function getSDK(): Promise<SDKBundle> {
   if (_sdk) return _sdk;
-  // Force CJS entry to avoid broken ESM directory imports in @meteora-ag/dlmm's index.mjs.
-  // The SDK's ESM bundle references @coral-xyz/anchor/dist/cjs/utils/bytes (bare directory)
-  // which Node 24 rejects with ERR_UNSUPPORTED_DIR_IMPORT.
   const { createRequire } = await import('node:module');
   const require = createRequire(import.meta.url);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,10 +62,10 @@ async function getSDK(): Promise<SDKBundle> {
   return _sdk;
 }
 
-// The instance type returned by DLMMClass.create — subset we actually use.
-// SDK 1.9.4 breaking changes vs 1.5.4:
-//   - removeLiquidity returns Promise<Transaction[]> (always array, not Transaction | Transaction[])
-//   - claimSwapFee returns Promise<Transaction[]> (always array, not Transaction | null)
+// ============================================================================
+// DLMM instance type (subset we use)
+// ============================================================================
+
 interface DLMMInstance {
   lbPair: {
     activeId: number;
@@ -65,7 +73,19 @@ interface DLMMInstance {
   };
   tokenX: { mint: { address: PublicKey; decimals: number } };
   tokenY: { mint: { address: PublicKey; decimals: number } };
-  getActiveBin(): Promise<{ binId: number; price: string }>;
+  getActiveBin(): Promise<{
+    binId: number;
+    price: string;
+    pricePerToken: string;
+  }>;
+  refetchStates(): Promise<void>;
+  getPositionsByUserAndLbPair(
+    userPubKey?: PublicKey,
+  ): Promise<{
+    activeBin: { binId: number; price: string; pricePerToken: string };
+    userPositions: LbPosition[];
+  }>;
+  getPosition(positionPubKey: PublicKey): Promise<LbPosition>;
   initializePositionAndAddLiquidityByStrategy(params: {
     positionPubKey: PublicKey;
     totalXAmount: BNType;
@@ -96,8 +116,15 @@ interface DLMMInstance {
   }): Promise<Transaction[]>;
 }
 
+// ============================================================================
+// Constants
+// ============================================================================
+
 export interface DLMMServiceOptions {
+  /** Primary RPC — used for transaction sending & confirmation. */
   rpcUrl: string;
+  /** Read-only RPC — used for DLMM.create, refetchStates, getActiveBin. Defaults to rpcUrl. */
+  readRpcUrl?: string;
   wallet: WalletService;
   cluster: 'mainnet' | 'devnet';
 }
@@ -108,10 +135,22 @@ const SDK_CLUSTER: Record<string, string> = {
   devnet: 'devnet',
 };
 
-/**
- * Map our strategy string to the SDK StrategyType enum value.
- * SDK values: Spot=0, Curve=1, BidAsk=2
- */
+/** Default confirmation timeout (ms). */
+const CONFIRM_TIMEOUT_MS = 30_000;
+
+/** Max transaction retry attempts. */
+const MAX_RETRIES = 3;
+
+/** Default slippage percentage for LP operations. */
+const DEFAULT_SLIPPAGE = 1;
+
+/** Max slippage percentage (auto-escalation ceiling). */
+const MAX_SLIPPAGE = 10;
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
 export function toStrategyType(strategy: 'spot' | 'bidask' | 'curve'): number {
   switch (strategy) {
     case 'bidask': return STRATEGY_TYPE.BidAsk;
@@ -122,14 +161,119 @@ export function toStrategyType(strategy: 'spot' | 'bidask' | 'curve'): number {
 }
 
 /**
- * Sign a transaction with the wallet, then send it via the connection.
- * Wraps send errors in TransactionError; network errors in NetworkError.
+ * Derive a websocket URL from an HTTP RPC URL.
+ * https:// → wss://, http:// → ws://
  */
-export async function signAndSend(
+function deriveWssUrl(httpUrl: string): string {
+  return httpUrl.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
+}
+
+/**
+ * Check whether an error message indicates a retryable condition.
+ */
+function isRetryableError(msg: string): boolean {
+  return (
+    msg.includes('block height exceeded') ||
+    msg.includes('expired') ||
+    msg.includes('Blockhash not found') ||
+    msg.includes('ExceededBinSlippageTolerance') ||
+    msg.includes('Too Many Requests') ||
+    msg.includes('429')
+  );
+}
+
+/**
+ * Check whether an error is a slippage tolerance issue.
+ */
+function isSlippageError(msg: string): boolean {
+  return msg.includes('ExceededBinSlippageTolerance');
+}
+
+// ============================================================================
+// Transaction confirmation — websocket with polling fallback
+// ============================================================================
+
+/**
+ * Confirm a transaction signature.
+ *
+ * Strategy:
+ * 1. Try websocket confirmation via onSignature (real-time push).
+ * 2. If websocket fails to connect or errors out, fall back to
+ *    connection.confirmTransaction (HTTP polling).
+ *
+ * Returns the time taken in ms (for diagnostics).
+ */
+async function confirmTx(
+  connection: Connection,
+  signature: string,
+  timeoutMs = CONFIRM_TIMEOUT_MS,
+): Promise<{ method: 'websocket' | 'polling'; durationMs: number }> {
+  const start = Date.now();
+
+  try {
+    // Attempt websocket confirmation
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error('Websocket confirmation timeout')),
+        timeoutMs,
+      );
+
+      const subId = connection.onSignature(
+        signature,
+        (result) => {
+          clearTimeout(timer);
+          if (result.err) {
+            reject(
+              new TransactionError(
+                `Transaction failed on-chain: ${JSON.stringify(result.err)}`,
+                'ON_CHAIN_FAILURE',
+              ),
+            );
+          } else {
+            resolve();
+          }
+        },
+        'confirmed',
+      );
+
+      // If the subscription itself errors, the timer will fire and we fall back
+      void subId; // keep reference to avoid GC
+    });
+
+    return { method: 'websocket', durationMs: Date.now() - start };
+  } catch (wsErr) {
+    // On-chain failures should not fall back — they'll fail on polling too
+    if (wsErr instanceof TransactionError) throw wsErr;
+
+    // Websocket failed (timeout, connection issue) — fall back to polling
+    try {
+      const latestBlockhash = await connection.getLatestBlockhash('confirmed');
+      await connection.confirmTransaction(
+        { signature, ...latestBlockhash },
+        'confirmed',
+      );
+      return { method: 'polling', durationMs: Date.now() - start };
+    } catch (pollErr) {
+      throw new NetworkError(
+        `Transaction confirmation failed (ws: ${wsErr instanceof Error ? wsErr.message : String(wsErr)}, poll: ${pollErr instanceof Error ? pollErr.message : String(pollErr)})`,
+        pollErr,
+      );
+    }
+  }
+}
+
+// ============================================================================
+// Sign, send, and confirm
+// ============================================================================
+
+/**
+ * Sign a transaction, send it, and confirm via websocket (with polling fallback).
+ */
+export async function signSendConfirm(
   tx: Transaction,
   wallet: WalletService,
-  connection: Connection
-): Promise<string> {
+  connection: Connection,
+): Promise<{ signature: string; confirmMethod: 'websocket' | 'polling'; confirmMs: number }> {
   let signed: Transaction;
   try {
     signed = await wallet.signTx(tx);
@@ -137,53 +281,247 @@ export async function signAndSend(
     throw new TransactionError(
       `Failed to sign transaction: ${err instanceof Error ? err.message : String(err)}`,
       'SIGN_FAILURE',
-      err
+      err,
     );
   }
+
+  let signature: string;
   try {
-    return await connection.sendRawTransaction(signed.serialize());
+    signature = await connection.sendRawTransaction(signed.serialize());
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Distinguish network-level failures from on-chain rejections
     if (msg.includes('fetch') || msg.includes('ECONNREFUSED') || msg.includes('timeout')) {
       throw new NetworkError(`RPC send failed: ${msg}`, err);
     }
     throw new TransactionError(`Transaction failed: ${msg}`, 'SEND_FAILURE', err);
   }
+
+  const confirm = await confirmTx(connection, signature);
+
+  return { signature, confirmMethod: confirm.method, confirmMs: confirm.durationMs };
 }
 
+// Keep backward-compat export (returns just the signature string)
+export async function signAndSend(
+  tx: Transaction,
+  wallet: WalletService,
+  connection: Connection,
+): Promise<string> {
+  const result = await signSendConfirm(tx, wallet, connection);
+  return result.signature;
+}
+
+// ============================================================================
+// DLMMService
+// ============================================================================
+
 export class DLMMService {
-  constructor(private _options: DLMMServiceOptions) {}
+  /** Read-only connection — DLMM.create, refetchStates, getActiveBin, position lookups. */
+  private _readConnection: Connection;
+  /** Send connection — transaction sending & websocket confirmation. */
+  private _sendConnection: Connection;
+  private _poolCache = new Map<string, DLMMInstance>();
+  /** Tracks pools that were just created (fresh state, no refetch needed). */
+  private _freshPools = new Set<string>();
+  /** Timestamp of last heavy RPC operation — used to throttle bursts. */
+  private _lastRpcTs = Date.now();
+
+  constructor(private _options: DLMMServiceOptions) {
+    const readRpc = _options.readRpcUrl ?? _options.rpcUrl;
+    const sendRpc = _options.rpcUrl;
+
+    this._readConnection = new Connection(readRpc, { commitment: 'confirmed' });
+
+    const wssUrl = deriveWssUrl(sendRpc);
+    this._sendConnection = new Connection(sendRpc, {
+      commitment: 'confirmed',
+      wsEndpoint: wssUrl,
+    });
+  }
+
+  /**
+   * Ensure minimum spacing between heavy RPC operations.
+   * Prevents back-to-back getMultipleAccountsInfo from triggering per-method rate limits.
+   */
+  private async _throttle(minGapMs = 2000): Promise<void> {
+    const now = Date.now();
+    const elapsed = now - this._lastRpcTs;
+    if (elapsed < minGapMs) {
+      await new Promise(r => setTimeout(r, minGapMs - elapsed));
+    }
+    this._lastRpcTs = Date.now();
+  }
+
+  // --------------------------------------------------------------------------
+  // Pool instance cache
+  // --------------------------------------------------------------------------
+
+  /**
+   * Get or create a cached DLMM instance for a pool.
+   * First call for a pool address does DLMM.create() (heavy).
+   * Subsequent calls return the cached instance.
+   */
+  private async _getInstance(pool: string): Promise<DLMMInstance> {
+    const cached = this._poolCache.get(pool);
+    if (cached) return cached;
+
+    const sdk = await getSDK();
+    let instance: DLMMInstance;
+    let lastErr: Error | undefined;
+
+    // DLMM.create() fires multiple getMultipleAccountsInfo calls internally.
+    // RPCs rate-limit per-method calls — the SDK's own retry (500ms→4s) often
+    // isn't enough. Our outer retry waits longer to let the window fully reset.
+    const POOL_LOAD_RETRIES = 4;
+    for (let attempt = 1; attempt <= POOL_LOAD_RETRIES; attempt++) {
+      try {
+        if (attempt > 1) {
+          const delay = Math.min(5000 * attempt, 15_000);
+          await new Promise((r) => setTimeout(r, delay));
+        }
+
+        await this._throttle();
+        instance = await sdk.dlmm.create(this._readConnection, new PublicKey(pool), {
+          cluster: SDK_CLUSTER[this._options.cluster],
+        });
+
+        this._poolCache.set(pool, instance!);
+        this._freshPools.add(pool);
+        return instance!;
+      } catch (err: unknown) {
+        lastErr = err instanceof Error ? err : new Error(String(err));
+        const msg = lastErr.message;
+        const retryable = isRetryableError(msg);
+
+        if (!retryable || attempt === POOL_LOAD_RETRIES) break;
+      }
+    }
+
+    throw new NetworkError(
+      `Failed to load pool ${pool}: ${lastErr?.message ?? 'unknown'}`,
+      lastErr,
+    );
+  }
+
+  /**
+   * Refresh a cached pool's on-chain state (lightweight — no full re-create).
+   * Skips refetch if the instance was just created (state is already fresh).
+   */
+  private async _refresh(pool: string): Promise<DLMMInstance> {
+    const instance = await this._getInstance(pool);
+
+    // Skip refetch if pool was just created — DLMM.create() already has fresh state
+    if (this._freshPools.has(pool)) {
+      this._freshPools.delete(pool);
+      return instance;
+    }
+
+    await this._throttle();
+    await instance.refetchStates();
+    return instance;
+  }
+
+  /**
+   * Get the raw SDK DLMM instance for a pool. Useful for debugging / inspection.
+   * Uses the cache — does not create a separate instance.
+   */
+  async getRawInstance(pool: string): Promise<DLMMInstance> {
+    return this._getInstance(pool);
+  }
+
+  /**
+   * Evict a pool from the cache (e.g. if the pool state is suspected stale).
+   */
+  evictPool(pool: string): void {
+    this._poolCache.delete(pool);
+  }
+
+  // --------------------------------------------------------------------------
+  // Transaction execution with retries
+  // --------------------------------------------------------------------------
+
+  /**
+   * Execute a transaction-producing function with retries and confirmation.
+   *
+   * On each retry: refetchStates → rebuild tx → sign → send → confirm.
+   * Auto-escalates slippage on ExceededBinSlippageTolerance.
+   */
+  private async _executeWithRetry(
+    pool: string,
+    createTxFn: (instance: DLMMInstance, slippage: number) => Promise<Transaction | Transaction[]>,
+    opts?: {
+      extraSigners?: Keypair[];
+      slippage?: number;
+      maxRetries?: number;
+    },
+  ): Promise<string[]> {
+    const wallet = this._options.wallet;
+    const maxRetries = opts?.maxRetries ?? MAX_RETRIES;
+    let slippage = opts?.slippage ?? DEFAULT_SLIPPAGE;
+    let lastErr: Error | undefined;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Refresh pool state before each attempt
+        const instance = await this._refresh(pool);
+
+        const txOrTxs = await createTxFn(instance, slippage);
+        const txArray = Array.isArray(txOrTxs) ? txOrTxs : [txOrTxs];
+
+        // Sign extra signers first (e.g. position keypair)
+        for (const tx of txArray) {
+          if (opts?.extraSigners) {
+            for (const signer of opts.extraSigners) {
+              tx.partialSign(signer);
+            }
+          }
+        }
+
+        // Send and confirm each tx sequentially (ws confirmation pipelines them)
+        const signatures: string[] = [];
+        for (const tx of txArray) {
+          const result = await signSendConfirm(tx, wallet, this._sendConnection);
+          console.log(`  tx confirmed via ${result.confirmMethod} (${result.confirmMs}ms)`);
+          signatures.push(result.signature);
+        }
+
+        return signatures;
+      } catch (err: unknown) {
+        lastErr = err instanceof Error ? err : new Error(String(err));
+        const msg = lastErr.message;
+
+        if (!isRetryableError(msg) || attempt === maxRetries) break;
+
+        // Auto-escalate slippage on tolerance errors
+        if (isSlippageError(msg) && slippage < MAX_SLIPPAGE) {
+          slippage = Math.min(slippage * 2, MAX_SLIPPAGE);
+          console.warn(`  Slippage exceeded, escalating to ${slippage}%`);
+        }
+
+        const delay = Math.min(1000 * 2 ** (attempt - 1), 5000);
+        console.warn(`  Tx attempt ${attempt}/${maxRetries} failed: ${msg}. Retrying in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+
+    throw lastErr!;
+  }
+
+  // --------------------------------------------------------------------------
+  // Pool metadata
+  // --------------------------------------------------------------------------
 
   /**
    * Resolve on-chain pool metadata: token mints, active bin, price.
-   * Pure read — no transactions, no signing.
+   * Uses cached instance + refetchStates (not a full re-create).
    */
   async getPoolMeta(pool: string): Promise<PoolMeta> {
-    const sdk = await getSDK();
-    const connection = new Connection(this._options.rpcUrl, 'confirmed');
-
-    let dlmm: DLMMInstance;
-    try {
-      dlmm = await sdk.dlmm.create(connection, new PublicKey(pool), {
-        cluster: SDK_CLUSTER[this._options.cluster],
-      });
-    } catch (err: unknown) {
-      throw new NetworkError(
-        `Failed to load pool ${pool}: ${err instanceof Error ? err.message : String(err)}`,
-        err,
-      );
-    }
-
+    const dlmm = await this._refresh(pool);
     const activeBin = await dlmm.getActiveBin();
-    const binStep = dlmm.lbPair.binStep;
 
-    // SDK returns a decimal-adjusted price: rawPrice * 10^(Ydec - Xdec).
-    // Normalize to UI price (token X in terms of token Y, human-readable).
-    // e.g. SOL/USDC: SDK returns 0.07936, UI price = 79.36 USDC per SOL.
-    const sdkPrice = parseFloat(activeBin.price);
-    const decimalDiff = dlmm.tokenX.mint.decimals - dlmm.tokenY.mint.decimals;
-    const activePrice = sdkPrice * 10 ** decimalDiff;
+    // SDK's pricePerToken is already the human-readable UI price.
+    // e.g. SOL/USDC: pricePerToken = "81.94" (USDC per SOL)
+    const activePrice = parseFloat(activeBin.pricePerToken);
 
     return {
       pool,
@@ -192,26 +530,15 @@ export class DLMMService {
       tokenXDecimals: dlmm.tokenX.mint.decimals,
       tokenYDecimals: dlmm.tokenY.mint.decimals,
       activeBinId: activeBin.binId,
-      binStep,
+      binStep: dlmm.lbPair.binStep,
       activePrice,
     };
   }
 
-  /**
-   * Open a new liquidity position.
-   *
-   * Parameters:
-   * - pool: pool address (base58 string)
-   * - amountX / amountY: amounts in raw lamports
-   * - strategy: 'spot' | 'bidask' | 'curve'   default: 'spot'
-   * - widthBins: half-width in bins             default: max(10, floor(50/binStep))
-   * - type: 'balanced' | 'imbalanced' | 'one_sided_x' | 'one_sided_y'
-   *
-   * SDK method: initializePositionAndAddLiquidityByStrategy
-   *   — confirmed in dist/index.d.ts line 8103
-   *
-   * Returns: { position, range_low, range_high, deposited_x, deposited_y, tx }
-   */
+  // --------------------------------------------------------------------------
+  // Open position
+  // --------------------------------------------------------------------------
+
   async openPosition(params: {
     pool: string;
     amountX?: number;
@@ -221,53 +548,38 @@ export class DLMMService {
     type?: 'balanced' | 'imbalanced' | 'one_sided_x' | 'one_sided_y';
   }): Promise<OpenPositionResult> {
     const sdk = await getSDK();
-    const connection = new Connection(this._options.rpcUrl, 'confirmed');
     const wallet = this._options.wallet;
     const userPubKey = wallet.getPublicKey();
 
-    let dlmm: DLMMInstance;
-    try {
-      dlmm = await sdk.dlmm.create(connection, new PublicKey(params.pool), {
-        cluster: SDK_CLUSTER[this._options.cluster],
-      });
-    } catch (err: unknown) {
-      throw new NetworkError(`Failed to load pool ${params.pool}: ${err instanceof Error ? err.message : String(err)}`, err);
-    }
-
-    // Get current active bin to centre our range
+    // Pre-fetch to determine range (uses cache)
+    const dlmm = await this._refresh(params.pool);
     const activeBin = await dlmm.getActiveBin();
     const activeBinId = activeBin.binId;
-    const binStep: number = dlmm.lbPair.binStep;
+    const binStep = dlmm.lbPair.binStep;
 
-    // Default width: max(10, floor(50 / binStep))
     const halfWidth = params.widthBins ?? Math.max(10, Math.floor(50 / binStep));
     const minBinId = activeBinId - halfWidth;
     const maxBinId = activeBinId + halfWidth;
-
     const strategyType = toStrategyType(params.strategy ?? 'spot');
 
-    // For one-sided positions, only supply one amount
-    const amountX = new sdk.BN(params.amountX ?? 0);
-    const amountY = new sdk.BN(params.amountY ?? 0);
-
-    // Each position needs its own keypair — the position pubkey is the account being created
+    // Position keypair must be stable across retries
     const positionKeypair = Keypair.generate();
 
-    const tx = await dlmm.initializePositionAndAddLiquidityByStrategy({
-      positionPubKey: positionKeypair.publicKey,
-      totalXAmount: amountX,
-      totalYAmount: amountY,
-      strategy: { minBinId, maxBinId, strategyType },
-      user: userPubKey,
-      slippage: 1, // 1% default slippage
-    });
+    const signatures = await this._executeWithRetry(
+      params.pool,
+      async (instance, slippage) => {
+        return instance.initializePositionAndAddLiquidityByStrategy({
+          positionPubKey: positionKeypair.publicKey,
+          totalXAmount: new sdk.BN(params.amountX ?? 0),
+          totalYAmount: new sdk.BN(params.amountY ?? 0),
+          strategy: { minBinId, maxBinId, strategyType },
+          user: userPubKey,
+          slippage,
+        });
+      },
+      { extraSigners: [positionKeypair] },
+    );
 
-    // The position keypair must also sign (it's the account being initialised)
-    tx.partialSign(positionKeypair);
-
-    const txSig = await signAndSend(tx, wallet, connection);
-
-    // Derive range prices from bin IDs
     const rangeLow = parseFloat(sdk.getPriceOfBinByBinId(minBinId, binStep).toString());
     const rangeHigh = parseFloat(sdk.getPriceOfBinByBinId(maxBinId, binStep).toString());
 
@@ -277,114 +589,148 @@ export class DLMMService {
       range_high: rangeHigh,
       deposited_x: params.amountX ?? 0,
       deposited_y: params.amountY ?? 0,
-      tx: txSig,
+      tx: signatures[signatures.length - 1],
     };
   }
 
-  /**
-   * Close a position (withdraw 100% liquidity + claim fees).
-   *
-   * Uses SDK removeLiquidity with shouldClaimAndClose=true.
-   * SDK method: removeLiquidity — confirmed in dist/index.d.ts
-   * bps: BN(10000) = 100%
-   *
-   * Returns: { withdrawn_x, withdrawn_y, claimed_fees_x, claimed_fees_y, tx }
-   */
+  // --------------------------------------------------------------------------
+  // Close position
+  // --------------------------------------------------------------------------
+
   async closePosition(positionAddress: string): Promise<ClosePositionResult> {
     const sdk = await getSDK();
-    const connection = new Connection(this._options.rpcUrl, 'confirmed');
     const wallet = this._options.wallet;
     const userPubKey = wallet.getPublicKey();
-
     const positionPubKey = new PublicKey(positionAddress);
 
-    // We need to find which pool this position belongs to.
-    // getAllLbPairPositionsByUser returns a Map<lbPairAddress, PositionInfo>
-    let positionInfo: PositionInfo | undefined;
-    let lbPosition: LbPosition | undefined;
+    // Find the position and its pool
+    const { positionInfo, lbPosition } = await this._findPosition(positionAddress);
+    const poolAddress = positionInfo.publicKey.toBase58();
 
-    let allPositions: Map<string, PositionInfo>;
-    try {
-      allPositions = await sdk.dlmm.getAllLbPairPositionsByUser(connection, userPubKey, {
-        cluster: SDK_CLUSTER[this._options.cluster],
-      });
-    } catch (err: unknown) {
-      throw new NetworkError(`Failed to fetch positions: ${err instanceof Error ? err.message : String(err)}`, err);
-    }
-
-    for (const [, info] of allPositions) {
-      const match = info.lbPairPositionsData.find(
-        (p) => p.publicKey.toBase58() === positionAddress
-      );
-      if (match) {
-        positionInfo = info;
-        lbPosition = match;
-        break;
-      }
-    }
-
-    if (!positionInfo || !lbPosition) {
-      throw new TransactionError(
-        `Position ${positionAddress} not found for this wallet`,
-        'POSITION_NOT_FOUND'
-      );
-    }
-
-    const dlmm = await sdk.dlmm.create(connection, positionInfo.publicKey, {
-      cluster: SDK_CLUSTER[this._options.cluster],
-    });
+    // Ensure pool is cached
+    await this._getInstance(poolAddress);
 
     const posData = lbPosition.positionData;
 
-    // removeLiquidity with shouldClaimAndClose=true removes all liquidity + closes.
-    // SDK 1.9.4: always returns Transaction[] (never a single Transaction)
-    const txs = await dlmm.removeLiquidity({
-      user: userPubKey,
-      position: positionPubKey,
-      fromBinId: posData.lowerBinId,
-      toBinId: posData.upperBinId,
-      bps: new sdk.BN(10_000), // 100%
-      shouldClaimAndClose: true,
-    });
-
-    let lastSig = '';
-    for (const tx of txs) {
-      lastSig = await signAndSend(tx, wallet, connection);
-    }
+    const signatures = await this._executeWithRetry(
+      poolAddress,
+      async (instance) => {
+        return instance.removeLiquidity({
+          user: userPubKey,
+          position: positionPubKey,
+          fromBinId: posData.lowerBinId,
+          toBinId: posData.upperBinId,
+          bps: new sdk.BN(10_000), // 100%
+          shouldClaimAndClose: true,
+        });
+      },
+    );
 
     return {
       withdrawn_x: parseFloat(posData.totalXAmount),
       withdrawn_y: parseFloat(posData.totalYAmount),
       claimed_fees_x: posData.feeX.toNumber(),
       claimed_fees_y: posData.feeY.toNumber(),
-      tx: lastSig,
+      tx: signatures[signatures.length - 1],
     };
   }
 
+  // --------------------------------------------------------------------------
+  // Claim fees
+  // --------------------------------------------------------------------------
+
+  async claimFees(positionAddress: string): Promise<{ claimedX: number; claimedY: number; tx: string }> {
+    const wallet = this._options.wallet;
+    const userPubKey = wallet.getPublicKey();
+
+    const { positionInfo, lbPosition } = await this._findPosition(positionAddress);
+    const poolAddress = positionInfo.publicKey.toBase58();
+
+    const claimedX = lbPosition.positionData.feeX.toNumber();
+    const claimedY = lbPosition.positionData.feeY.toNumber();
+
+    const signatures = await this._executeWithRetry(
+      poolAddress,
+      async (instance) => {
+        const txs = await instance.claimSwapFee({
+          owner: userPubKey,
+          position: lbPosition,
+        });
+        if (txs.length === 0) return [];
+        return txs;
+      },
+    );
+
+    if (signatures.length === 0) {
+      return { claimedX: 0, claimedY: 0, tx: '' };
+    }
+
+    return { claimedX, claimedY, tx: signatures[signatures.length - 1] };
+  }
+
+  // --------------------------------------------------------------------------
+  // Add liquidity
+  // --------------------------------------------------------------------------
+
+  async addLiquidity(params: {
+    position: string;
+    amountX?: number;
+    amountY?: number;
+    strategy?: 'spot' | 'bidask' | 'curve';
+  }): Promise<{ addedX: number; addedY: number; tx: string }> {
+    const sdk = await getSDK();
+    const wallet = this._options.wallet;
+    const userPubKey = wallet.getPublicKey();
+
+    const { positionInfo, lbPosition } = await this._findPosition(params.position);
+    const poolAddress = positionInfo.publicKey.toBase58();
+    const posData = lbPosition.positionData;
+    const strategyType = toStrategyType(params.strategy ?? 'spot');
+
+    const signatures = await this._executeWithRetry(
+      poolAddress,
+      async (instance, slippage) => {
+        return instance.addLiquidityByStrategy({
+          positionPubKey: lbPosition.publicKey,
+          totalXAmount: new sdk.BN(params.amountX ?? 0),
+          totalYAmount: new sdk.BN(params.amountY ?? 0),
+          strategy: {
+            minBinId: posData.lowerBinId,
+            maxBinId: posData.upperBinId,
+            strategyType,
+          },
+          user: userPubKey,
+          slippage,
+        });
+      },
+    );
+
+    return {
+      addedX: params.amountX ?? 0,
+      addedY: params.amountY ?? 0,
+      tx: signatures[signatures.length - 1],
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // Position queries
+  // --------------------------------------------------------------------------
+
   /**
    * Get all positions for a wallet address.
-   *
-   * Uses DLMM.getAllLbPairPositionsByUser (static method).
-   * Returns [] if wallet has no positions — never throws.
-   *
-   * SDK method: getAllLbPairPositionsByUser — confirmed in dist/index.d.ts
-   * Return type: Map<string, PositionInfo>
-   *   PositionInfo.lbPairPositionsData: LbPosition[]
-   *   LbPosition.positionData: PositionData
+   * Uses the static getAllLbPairPositionsByUser (no pool-specific instance needed).
    */
   async getPositions(walletAddress: string): Promise<Position[]> {
     const sdk = await getSDK();
-    const connection = new Connection(this._options.rpcUrl, 'confirmed');
     let allPositions: Map<string, PositionInfo>;
 
     try {
       allPositions = await sdk.dlmm.getAllLbPairPositionsByUser(
-        connection,
+        this._readConnection,
         new PublicKey(walletAddress),
-        { cluster: SDK_CLUSTER[this._options.cluster] }
+        { cluster: SDK_CLUSTER[this._options.cluster] },
       );
     } catch {
-      // Never throw — return empty on any failure
       return [];
     }
 
@@ -394,14 +740,10 @@ export class DLMMService {
 
     for (const [lbPairAddress, info] of allPositions) {
       const binStep: number = info.lbPair.binStep;
-
-      // Determine active bin to compute status — use activeId from the lbPair state
-      // lbPair.activeId is the current active bin
       const activeBinId: number = info.lbPair.activeId;
 
       for (const lbPos of info.lbPairPositionsData) {
         const posData = lbPos.positionData;
-
         const lowerBin = posData.lowerBinId;
         const upperBin = posData.upperBinId;
 
@@ -414,7 +756,6 @@ export class DLMMService {
         const rangeHigh = parseFloat(sdk.getPriceOfBinByBinId(upperBin, binStep).toString());
         const currentPrice = parseFloat(sdk.getPriceOfBinByBinId(activeBinId, binStep).toString());
 
-        // Token symbol from mint (fallback to truncated mint address)
         const tokenXSymbol = info.tokenX.mint.address.toBase58().slice(0, 4);
         const tokenYSymbol = info.tokenY.mint.address.toBase58().slice(0, 4);
         const poolName = `${tokenXSymbol}-${tokenYSymbol}`;
@@ -424,11 +765,11 @@ export class DLMMService {
           pool: lbPairAddress,
           pool_name: poolName,
           status,
-          deposited_x: 0, // SDK does not expose original deposit amounts — not tracked
+          deposited_x: 0,
           deposited_y: 0,
           current_value_x: parseFloat(posData.totalXAmount),
           current_value_y: parseFloat(posData.totalYAmount),
-          pnl_usd: null, // Entry price not available from SDK — would need external storage
+          pnl_usd: null,
           fees_earned_x: posData.feeX.toNumber(),
           fees_earned_y: posData.feeY.toNumber(),
           range_low: rangeLow,
@@ -446,7 +787,6 @@ export class DLMMService {
    * Get detailed info for a single position.
    */
   async getPositionDetail(position: string): Promise<Position> {
-    // Find it in getPositions — this is the simplest correct approach
     const wallet = this._options.wallet;
     const positions = await this.getPositions(wallet.getPublicKey().toBase58());
     const found = positions.find((p) => p.address === position);
@@ -456,154 +796,83 @@ export class DLMMService {
     return found;
   }
 
+  // --------------------------------------------------------------------------
+  // Internal: find a position by address (scoped lookup when pool is cached)
+  // --------------------------------------------------------------------------
+
   /**
-   * Claim swap fees from a position without removing liquidity.
-   *
-   * SDK method: claimSwapFee — confirmed in dist/index.d.ts
-   * SDK 1.9.4: returns Promise<Transaction[]> (always array, never null).
-   * Empty array means no fees to claim.
+   * Find a position by its address. Tries scoped lookup on cached pools first,
+   * falls back to global search.
    */
-  async claimFees(positionAddress: string): Promise<{ claimedX: number; claimedY: number; tx: string }> {
+  private async _findPosition(positionAddress: string): Promise<{
+    positionInfo: PositionInfo;
+    lbPosition: LbPosition;
+  }> {
     const sdk = await getSDK();
-    const connection = new Connection(this._options.rpcUrl, 'confirmed');
-    const wallet = this._options.wallet;
-    const userPubKey = wallet.getPublicKey();
+    const userPubKey = this._options.wallet.getPublicKey();
 
-    // Find the position across all pools
-    let positionInfo: PositionInfo | undefined;
-    let lbPosition: LbPosition | undefined;
+    // Try scoped lookup on each cached pool first (much cheaper)
+    for (const [poolAddr, instance] of this._poolCache) {
+      try {
+        const { userPositions } = await instance.getPositionsByUserAndLbPair(userPubKey);
+        const match = userPositions.find(
+          (p) => p.publicKey.toBase58() === positionAddress,
+        );
+        if (match) {
+          // We need the PositionInfo shape — construct a minimal one from cache
+          // But we need the full PositionInfo for the pool pubkey, so do a quick
+          // global lookup only when we know the pool
+          // Actually, we already know the pool address from the cache key
+          // We need to return positionInfo with publicKey set to the pool
+          // The global lookup gives us this naturally, so let's just use the match
+          // and construct the info we need
+          return {
+            positionInfo: { publicKey: new PublicKey(poolAddr) } as PositionInfo,
+            lbPosition: match,
+          };
+        }
+      } catch {
+        // Scoped lookup failed — continue to next pool or global search
+      }
+    }
 
+    // Fall back to global search
     let allPositions: Map<string, PositionInfo>;
     try {
-      allPositions = await sdk.dlmm.getAllLbPairPositionsByUser(connection, userPubKey, {
-        cluster: SDK_CLUSTER[this._options.cluster],
-      });
+      allPositions = await sdk.dlmm.getAllLbPairPositionsByUser(
+        this._readConnection,
+        userPubKey,
+        { cluster: SDK_CLUSTER[this._options.cluster] },
+      );
     } catch (err: unknown) {
-      throw new NetworkError(`Failed to fetch positions: ${err instanceof Error ? err.message : String(err)}`, err);
+      throw new NetworkError(
+        `Failed to fetch positions: ${err instanceof Error ? err.message : String(err)}`,
+        err,
+      );
     }
 
     for (const [, info] of allPositions) {
       const match = info.lbPairPositionsData.find(
-        (p) => p.publicKey.toBase58() === positionAddress
+        (p) => p.publicKey.toBase58() === positionAddress,
       );
       if (match) {
-        positionInfo = info;
-        lbPosition = match;
-        break;
+        // Cache this pool for future lookups
+        const poolAddr = info.publicKey.toBase58();
+        if (!this._poolCache.has(poolAddr)) {
+          try {
+            await this._getInstance(poolAddr);
+          } catch {
+            // Non-critical — caching failure shouldn't break the operation
+          }
+        }
+        return { positionInfo: info, lbPosition: match };
       }
     }
 
-    if (!positionInfo || !lbPosition) {
-      throw new TransactionError(
-        `Position ${positionAddress} not found for this wallet`,
-        'POSITION_NOT_FOUND'
-      );
-    }
-
-    const dlmm = await sdk.dlmm.create(connection, positionInfo.publicKey, {
-      cluster: SDK_CLUSTER[this._options.cluster],
-    });
-
-    const claimedX = lbPosition.positionData.feeX.toNumber();
-    const claimedY = lbPosition.positionData.feeY.toNumber();
-
-    // SDK 1.9.4: claimSwapFee returns Transaction[] — empty array means no fees to claim
-    const txs = await dlmm.claimSwapFee({
-      owner: userPubKey,
-      position: lbPosition,
-    });
-
-    if (txs.length === 0) {
-      // No fees to claim
-      return { claimedX: 0, claimedY: 0, tx: '' };
-    }
-
-    let lastSig = '';
-    for (const tx of txs) {
-      lastSig = await signAndSend(tx, wallet, connection);
-    }
-
-    return { claimedX, claimedY, tx: lastSig };
-  }
-
-  /**
-   * Add liquidity to an existing position.
-   *
-   * Finds the position's pool, then calls addLiquidityByStrategy using the
-   * position's existing bin range and the specified strategy.
-   */
-  async addLiquidity(params: {
-    position: string;
-    amountX?: number;
-    amountY?: number;
-    strategy?: 'spot' | 'bidask' | 'curve';
-  }): Promise<{ addedX: number; addedY: number; tx: string }> {
-    const sdk = await getSDK();
-    const connection = new Connection(this._options.rpcUrl, 'confirmed');
-    const wallet = this._options.wallet;
-    const userPubKey = wallet.getPublicKey();
-
-    // Find the position and its pool
-    let positionInfo: PositionInfo | undefined;
-    let lbPosition: LbPosition | undefined;
-
-    let allPositions: Map<string, PositionInfo>;
-    try {
-      allPositions = await sdk.dlmm.getAllLbPairPositionsByUser(connection, userPubKey, {
-        cluster: SDK_CLUSTER[this._options.cluster],
-      });
-    } catch (err: unknown) {
-      throw new NetworkError(`Failed to fetch positions: ${err instanceof Error ? err.message : String(err)}`, err);
-    }
-
-    for (const [, info] of allPositions) {
-      const match = info.lbPairPositionsData.find(
-        (p) => p.publicKey.toBase58() === params.position
-      );
-      if (match) {
-        positionInfo = info;
-        lbPosition = match;
-        break;
-      }
-    }
-
-    if (!positionInfo || !lbPosition) {
-      throw new TransactionError(
-        `Position ${params.position} not found for this wallet`,
-        'POSITION_NOT_FOUND'
-      );
-    }
-
-    const dlmm = await sdk.dlmm.create(connection, positionInfo.publicKey, {
-      cluster: SDK_CLUSTER[this._options.cluster],
-    });
-
-    const posData = lbPosition.positionData;
-    const strategyType = toStrategyType(params.strategy ?? 'spot');
-
-    const amountX = new sdk.BN(params.amountX ?? 0);
-    const amountY = new sdk.BN(params.amountY ?? 0);
-
-    const tx = await dlmm.addLiquidityByStrategy({
-      positionPubKey: lbPosition.publicKey,
-      totalXAmount: amountX,
-      totalYAmount: amountY,
-      strategy: {
-        minBinId: posData.lowerBinId,
-        maxBinId: posData.upperBinId,
-        strategyType,
-      },
-      user: userPubKey,
-      slippage: 1, // 1%
-    });
-
-    const txSig = await signAndSend(tx, wallet, connection);
-
-    return {
-      addedX: params.amountX ?? 0,
-      addedY: params.amountY ?? 0,
-      tx: txSig,
-    };
+    throw new TransactionError(
+      `Position ${positionAddress} not found for this wallet`,
+      'POSITION_NOT_FOUND',
+    );
   }
 
   // Swap is handled by Jupiter Ultra API — see jup.ts / jupiterSwap()

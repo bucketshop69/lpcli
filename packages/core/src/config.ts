@@ -26,8 +26,10 @@ export interface LPCLIConfig {
   wallet: string;
   /** Solana cluster */
   cluster: 'mainnet' | 'devnet';
-  /** Helius or other RPC URL */
+  /** Primary RPC URL — used for transaction sending & confirmation */
   rpcUrl: string;
+  /** Read-only RPC URL — used for account reads (DLMM.create, getBalances, etc.). Defaults to rpcUrl. */
+  readRpcUrl: string;
   /** Funding token for auto-swap on LP operations */
   fundingToken: FundingToken;
   /** SOL reserved for transaction fees (in SOL, e.g. 0.02). Never swapped away. */
@@ -112,6 +114,11 @@ export function loadConfig(): LPCLIConfig {
     file.rpcUrl ||
     DEFAULT_RPC;
 
+  const readRpcUrl =
+    process.env['READ_RPC_URL'] ||
+    (file as Record<string, unknown>)['readRpcUrl'] as string ||
+    rpcUrl;
+
   const cluster =
     (process.env['CLUSTER'] as 'mainnet' | 'devnet') ??
     file.cluster ??
@@ -134,5 +141,5 @@ export function loadConfig(): LPCLIConfig {
     process.env['FEE_RESERVE_SOL'] ?? file.feeReserveSol ?? DEFAULT_FEE_RESERVE_SOL,
   );
 
-  return { wallet, cluster, rpcUrl, fundingToken, feeReserveSol };
+  return { wallet, cluster, rpcUrl, readRpcUrl, fundingToken, feeReserveSol };
 }

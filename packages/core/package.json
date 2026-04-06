@@ -20,6 +20,7 @@
     "test:e2e:swap": "node --import tsx --test tests/swap.e2e.ts",
     "test:e2e:open": "node --import tsx --test tests/open.e2e.ts",
     "test:e2e:close": "node --import tsx --test tests/close.e2e.ts",
+    "test:e2e:poolmeta": "node --import tsx --test tests/poolmeta.e2e.ts",
     "test:e2e:roundtrip": "node --import tsx --test tests/roundtrip.e2e.ts",
     "dev": "node --import tsx --watch tests/core.e2e.ts"
   },

@@ -166,7 +166,55 @@ export class WalletService {
   }
 
   /**
+   * Get the raw token balance for a specific mint.
+   * Returns { amount (raw string), uiAmount, decimals } or null if no account.
+   * Uses getTokenAccountBalance on the ATA — single lightweight RPC call.
+   */
+  async getTokenBalance(mint: string): Promise<TokenBalance | null> {
+    const mintPubKey = new PublicKey(mint);
+    const ata = await getAssociatedTokenAddress(mintPubKey, this._publicKey);
+    try {
+      const resp = await this.connection.getTokenAccountBalance(ata);
+      return {
+        mint,
+        amount: resp.value.amount,
+        uiAmount: resp.value.uiAmount ?? 0,
+        decimals: resp.value.decimals,
+      };
+    } catch {
+      // Account doesn't exist — zero balance
+      return null;
+    }
+  }
+
+  /**
+   * Get SOL balance + balances for specific mints only.
+   * Much lighter than getBalances() which scans all token accounts.
+   */
+  async getMintBalances(mints: string[]): Promise<WalletBalances> {
+    const solLamports = await this.connection.getBalance(this._publicKey);
+
+    const SOL = 'So11111111111111111111111111111111111111112';
+    const unique = [...new Set(mints.filter(m => m !== SOL))];
+    const tokens: TokenBalance[] = [];
+
+    for (const mint of unique) {
+      const bal = await this.getTokenBalance(mint);
+      if (bal && bal.uiAmount > 0) tokens.push(bal);
+    }
+
+    return {
+      address: this._publicKey.toBase58(),
+      solBalance: solLamports / LAMPORTS_PER_SOL,
+      solLamports,
+      tokens,
+    };
+  }
+
+  /**
    * Get SOL balance + all SPL token balances for this wallet.
+   * NOTE: This calls getParsedTokenAccountsByOwner which is heavy.
+   * Prefer getMintBalances() when you know which mints you need.
    */
   async getBalances(): Promise<WalletBalances> {
     const solLamports = await this.connection.getBalance(this._publicKey);

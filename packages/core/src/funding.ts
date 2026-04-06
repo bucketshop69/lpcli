@@ -217,11 +217,14 @@ export async function executeSwaps(
 /**
  * Open a position with automatic funding-token swap.
  *
- * 1. Resolve pool metadata (mints, price).
- * 2. Calculate the target split for X and Y.
- * 3. Check wallet balances, plan & execute swaps.
- * 4. Re-check balances (use real post-swap amounts).
- * 5. Open position.
+ * Budget is split in funding-token units (no price math).
+ * Jupiter handles the actual conversion rates.
+ *
+ * Flow:
+ *   1. Pool metadata (mints, decimals).
+ *   2. Ensure SOL for fees + rent.
+ *   3. Split budget → swap to pool tokens as needed.
+ *   4. Read actual balances, deposit everything.
  */
 export async function fundedOpen(params: {
   pool: string;
@@ -230,7 +233,7 @@ export async function fundedOpen(params: {
   config: LPCLIConfig;
   wallet: WalletService;
   dlmm: DLMMService;
-  /** Fraction of budget allocated to token X. Default 0.5 (balanced). */
+  /** Fraction of budget allocated to token X (0.0–1.0). Default 0.5. */
   ratioX?: number;
   strategy?: 'spot' | 'bidask' | 'curve';
   widthBins?: number;
@@ -238,71 +241,70 @@ export async function fundedOpen(params: {
   const { pool, amount, config, wallet, dlmm, strategy, widthBins } = params;
   const ratioX = params.ratioX ?? 0.5;
   const feeReserve = feeReserveLamports(config);
-  // Reserve fee + rent for position account creation (rent is refunded on close)
   const solReserve = feeReserve + POSITION_RENT_LAMPORTS;
+  const fundingMint = config.fundingToken.mint;
 
   // 1. Pool metadata
   const poolMeta = await dlmm.getPoolMeta(pool);
+  const relevantMints = [poolMeta.tokenXMint, poolMeta.tokenYMint, fundingMint];
 
-  // 2. Calculate target split (in UI amounts)
-  const split = calculateSplit(amount, config.fundingToken.mint, config.fundingToken.decimals, poolMeta, ratioX);
-
-  // 3. Check balances & plan swaps
-  let balances = await wallet.getBalances();
-
-  // If SOL is short for fees + rent, swap some funding token → SOL first
-  if (balances.solLamports < solReserve) {
-    const shortfallLamports = solReserve - balances.solLamports;
-    // Estimate funding token needed: use pool price if available, else assume ~$100/SOL
-    const solPriceEstimate = poolMeta.activePrice > 0 && poolMeta.tokenXMint === SOL_MINT
-      ? poolMeta.activePrice  // SOL price in token Y (e.g. USDC)
-      : 150; // conservative fallback
-    const shortfallSol = shortfallLamports / LAMPORTS_PER_SOL;
-    const fundingNeeded = shortfallSol * solPriceEstimate * 1.15; // 15% buffer for slippage
-    const rawFunding = Math.ceil(fundingNeeded * 10 ** config.fundingToken.decimals);
-    const rentSwap: SwapStep[] = [{ inputMint: config.fundingToken.mint, outputMint: SOL_MINT, amount: rawFunding }];
-    await executeSwaps(rentSwap, wallet);
-    balances = await wallet.getBalances();
-
-    if (balances.solLamports < solReserve) {
+  // 2. Ensure SOL for fees + rent.
+  //    If short, swap a small amount of funding token → SOL.
+  //    We swap the SOL shortfall as outputMint=SOL with ExactIn on a conservative estimate.
+  const solBal = await wallet.getBalance();
+  if (solBal < solReserve && fundingMint !== SOL_MINT) {
+    // Estimate: 0.1 SOL ≈ a few dollars of any token — generous enough for rent + fees
+    const solTopUp = Math.max(solReserve - solBal, 10_000_000) + 5_000_000;
+    // Convert lamports to a funding-token amount (rough: assume ~$150/SOL)
+    const solNeeded = solTopUp / LAMPORTS_PER_SOL;
+    const fundingForSol = Math.ceil(solNeeded * 200 * 10 ** config.fundingToken.decimals); // 200 USD/SOL overestimate
+    await executeSwaps([{ inputMint: fundingMint, outputMint: SOL_MINT, amount: fundingForSol }], wallet);
+    const solAfter = await wallet.getBalance();
+    if (solAfter < solReserve) {
       throw new TransactionError(
-        `Insufficient SOL after rent swap. Have ${balances.solLamports} lamports, need ${solReserve}.`,
+        `Insufficient SOL for fees. Have ${solAfter} lamports, need ${solReserve}.`,
         'INSUFFICIENT_FEE_RESERVE',
       );
     }
   }
 
-  const steps = planSwaps({
-    targetX: split.amountX,
-    targetY: split.amountY,
-    balances,
-    poolMeta,
-    fundingMint: config.fundingToken.mint,
-    fundingDecimals: config.fundingToken.decimals,
-    feeReserve: solReserve,
-  });
+  // 3. Split budget and swap to pool tokens.
+  //    No price math — just divide the funding budget proportionally
+  //    and let Jupiter handle the conversion.
+  const allocateX = Math.floor(amount * ratioX);
+  const allocateY = amount - allocateX;
 
-  // 4. Execute swaps
+  const steps: SwapStep[] = [];
+  if (fundingMint !== poolMeta.tokenXMint && allocateX > 0) {
+    steps.push({ inputMint: fundingMint, outputMint: poolMeta.tokenXMint, amount: allocateX });
+  }
+  if (fundingMint !== poolMeta.tokenYMint && allocateY > 0) {
+    steps.push({ inputMint: fundingMint, outputMint: poolMeta.tokenYMint, amount: allocateY });
+  }
+
   const swapResults = await executeSwaps(steps, wallet);
 
-  // 5. Re-read balances after swaps — use real amounts, not estimates
-  const postSwapBalances = await wallet.getBalances();
-  const finalX = availableBalance(postSwapBalances, poolMeta.tokenXMint, solReserve);
-  const finalY = availableBalance(postSwapBalances, poolMeta.tokenYMint, solReserve);
+  // 4. Read actual post-swap balances and deposit everything available.
+  const postSwap = steps.length > 0
+    ? await wallet.getMintBalances(relevantMints)
+    : await wallet.getMintBalances(relevantMints);
 
-  // Use the lesser of target and available (don't overshoot)
-  const depositX = Math.min(split.amountX, finalX);
-  const depositY = Math.min(split.amountY, finalY);
+  const rawX = rawBalance(postSwap, poolMeta.tokenXMint);
+  const rawY = rawBalance(postSwap, poolMeta.tokenYMint);
 
-  // Convert UI amounts to raw for the SDK
-  const rawDepositX = toRaw(depositX, poolMeta.tokenXMint, postSwapBalances);
-  const rawDepositY = toRaw(depositY, poolMeta.tokenYMint, postSwapBalances);
+  // Deduct SOL reserve if one of the pool tokens is SOL
+  const depositX = poolMeta.tokenXMint === SOL_MINT
+    ? Math.max(0, rawX - solReserve)
+    : rawX;
+  const depositY = poolMeta.tokenYMint === SOL_MINT
+    ? Math.max(0, rawY - solReserve)
+    : rawY;
 
-  // 6. Open position
+  // 5. Open position
   const position = await dlmm.openPosition({
     pool,
-    amountX: rawDepositX,
-    amountY: rawDepositY,
+    amountX: depositX,
+    amountY: depositY,
     strategy,
     widthBins,
   });
@@ -327,14 +329,14 @@ export async function fundedClose(params: {
   const { positionAddress, pool, config, wallet, dlmm } = params;
   const feeReserve = feeReserveLamports(config);
 
-  // 1. Close
-  const close = await dlmm.closePosition(positionAddress);
-
-  // 2. Pool metadata (need mints for swap-back)
+  // 1. Pool metadata (need mints — cached, no extra RPC if pool was used before)
   const poolMeta = await dlmm.getPoolMeta(pool);
 
-  // 3. Read actual balances after close
-  const balances = await wallet.getBalances();
+  // 2. Close
+  const close = await dlmm.closePosition(positionAddress);
+
+  // 3. Read balances for pool tokens only (targeted, not full scan)
+  const balances = await wallet.getMintBalances([poolMeta.tokenXMint, poolMeta.tokenYMint]);
 
   // 4. Plan swap-back for both pool tokens
   const steps = planSwapBack({
@@ -367,17 +369,18 @@ export async function fundedClaim(params: {
   const { positionAddress, pool, config, wallet, dlmm } = params;
   const feeReserve = feeReserveLamports(config);
 
-  // 1. Snapshot balances before claim
-  const preClaim = await wallet.getBalances();
+  // 1. Pool metadata (cached if pool was used before)
+  const poolMeta = await dlmm.getPoolMeta(pool);
+  const poolMints = [poolMeta.tokenXMint, poolMeta.tokenYMint];
 
-  // 2. Claim
+  // 2. Snapshot balances before claim (targeted — only pool mints)
+  const preClaim = await wallet.getMintBalances(poolMints);
+
+  // 3. Claim
   const claim = await dlmm.claimFees(positionAddress);
 
-  // 3. Pool metadata
-  const poolMeta = await dlmm.getPoolMeta(pool);
-
   // 4. Post-claim balances — diff tells us what was actually claimed
-  const postClaim = await wallet.getBalances();
+  const postClaim = await wallet.getMintBalances(poolMints);
 
   // Only swap back the delta (what was actually received as fees)
   const deltaX = rawBalance(postClaim, poolMeta.tokenXMint) - rawBalance(preClaim, poolMeta.tokenXMint);
@@ -413,6 +416,7 @@ export async function fundedClaim(params: {
 // ============================================================================
 // Internal Helpers
 // ============================================================================
+
 
 /**
  * Get the available balance for a mint, with SOL fee reserve deducted

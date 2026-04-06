@@ -50,5 +50,9 @@ export { jupiterSwap, getJupiterQuote, getUltraOrder, USDC_MINT } from './jup.js
 export { fundedOpen, fundedClose, fundedClaim, calculateSplit, planSwaps, planSwapBack, executeSwaps } from './funding.js';
 export type { LiquiditySplit } from './funding.js';
 
+// Token Registry
+export type { TokenInfo } from './tokens.js';
+export { TokenRegistry } from './tokens.js';
+
 // LPCLI
 export { LPCLI } from './lpcli.js';

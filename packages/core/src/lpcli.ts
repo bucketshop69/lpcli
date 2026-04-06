@@ -37,6 +37,7 @@ export class LPCLI {
       this._wallet = await WalletService.init(this.config.wallet, this.config.rpcUrl);
       this.dlmm = new DLMMService({
         rpcUrl: this.config.rpcUrl,
+        readRpcUrl: this.config.readRpcUrl,
         wallet: this._wallet,
         cluster: this.config.cluster,
       });
