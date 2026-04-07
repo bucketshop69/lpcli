@@ -6,5 +6,5 @@
     "symbol": "USDC",
     "decimals": 6
   },
-  "feeReserveSol": 0.02
+  "feeReserveSol": 0.08
 }

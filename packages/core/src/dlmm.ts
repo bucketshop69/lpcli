@@ -550,29 +550,32 @@ export class DLMMService {
     const sdk = await getSDK();
     const wallet = this._options.wallet;
     const userPubKey = wallet.getPublicKey();
-
-    // Pre-fetch to determine range (uses cache)
-    const dlmm = await this._refresh(params.pool);
-    const activeBin = await dlmm.getActiveBin();
-    const activeBinId = activeBin.binId;
-    const binStep = dlmm.lbPair.binStep;
-
-    const halfWidth = params.widthBins ?? Math.max(10, Math.floor(50 / binStep));
-    const minBinId = activeBinId - halfWidth;
-    const maxBinId = activeBinId + halfWidth;
     const strategyType = toStrategyType(params.strategy ?? 'spot');
 
     // Position keypair must be stable across retries
     const positionKeypair = Keypair.generate();
 
+    // Range is computed inside the callback using the already-refreshed instance.
+    // _executeWithRetry calls _refresh() before each attempt, which updates
+    // lbPair.activeId — no separate getActiveBin() RPC call needed.
+    let finalMinBinId = 0;
+    let finalMaxBinId = 0;
+    let finalBinStep = 0;
+
     const signatures = await this._executeWithRetry(
       params.pool,
       async (instance, slippage) => {
+        const activeBinId = instance.lbPair.activeId;
+        finalBinStep = instance.lbPair.binStep;
+        const halfWidth = params.widthBins ?? Math.max(10, Math.floor(50 / finalBinStep));
+        finalMinBinId = activeBinId - halfWidth;
+        finalMaxBinId = activeBinId + halfWidth;
+
         return instance.initializePositionAndAddLiquidityByStrategy({
           positionPubKey: positionKeypair.publicKey,
           totalXAmount: new sdk.BN(params.amountX ?? 0),
           totalYAmount: new sdk.BN(params.amountY ?? 0),
-          strategy: { minBinId, maxBinId, strategyType },
+          strategy: { minBinId: finalMinBinId, maxBinId: finalMaxBinId, strategyType },
           user: userPubKey,
           slippage,
         });
@@ -580,8 +583,8 @@ export class DLMMService {
       { extraSigners: [positionKeypair] },
     );
 
-    const rangeLow = parseFloat(sdk.getPriceOfBinByBinId(minBinId, binStep).toString());
-    const rangeHigh = parseFloat(sdk.getPriceOfBinByBinId(maxBinId, binStep).toString());
+    const rangeLow = parseFloat(sdk.getPriceOfBinByBinId(finalMinBinId, finalBinStep).toString());
+    const rangeHigh = parseFloat(sdk.getPriceOfBinByBinId(finalMaxBinId, finalBinStep).toString());
 
     return {
       position: positionKeypair.publicKey.toBase58(),

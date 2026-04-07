@@ -144,26 +144,29 @@ export async function getUltraOrder(params: {
 }
 
 /**
- * Get a price quote without executing (uses a dummy taker).
+ * Quote how much of `outputMint` you'd get for `amountIn` of `inputMint`.
+ * Uses the Ultra API with a dummy taker — ignores the missing transaction,
+ * only reads the quoted amounts.
+ * Returns raw outAmount (string), or null on failure.
  */
-export async function getJupiterQuote(params: {
-  inputMint: string;
-  outputMint: string;
-  amount: string | number;
-}): Promise<JupiterQuoteResult> {
-  const DUMMY_TAKER = '11111111111111111111111111111111';
-  const order = await getUltraOrder({
-    inputMint: params.inputMint,
-    outputMint: params.outputMint,
-    amount: params.amount,
-    taker: DUMMY_TAKER,
-  });
-  return {
-    inAmount: order.inAmount,
-    outAmount: order.outAmount,
-    priceImpactPct: order.priceImpactPct,
-    slippageBps: order.slippageBps,
-  };
+export async function quoteSolToToken(
+  solLamports: number,
+  outputMint: string,
+): Promise<string | null> {
+  try {
+    const qs = new URLSearchParams({
+      inputMint: SOL_MINT,
+      outputMint,
+      amount: String(solLamports),
+      taker: '11111111111111111111111111111111',
+    });
+    const res = await fetch(`${ULTRA_API_BASE}/order?${qs}`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as UltraOrderResponse;
+    return data.outAmount ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

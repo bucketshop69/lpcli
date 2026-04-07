@@ -18,6 +18,8 @@ import {
   getOrCreateAssociatedTokenAccount,
   createTransferInstruction,
   getAssociatedTokenAddress,
+  getAssociatedTokenAddressSync,
+  AccountLayout,
 } from '@solana/spl-token';
 
 // ============================================================================
@@ -189,18 +191,52 @@ export class WalletService {
 
   /**
    * Get SOL balance + balances for specific mints only.
-   * Much lighter than getBalances() which scans all token accounts.
+   *
+   * Uses getMultipleAccountsInfo to batch all lookups into a single RPC call:
+   * derives ATAs locally with getAssociatedTokenAddressSync (zero RPC),
+   * then fetches [walletAccount, ata1, ata2, ...] in one shot.
+   *
+   * @param knownDecimals Optional map of mint → decimals. When provided, avoids
+   *   needing to fetch mint accounts. Callers with PoolMeta should pass this.
+   *   Falls back to 9 for SOL, 6 for unknown SPL tokens.
    */
-  async getMintBalances(mints: string[]): Promise<WalletBalances> {
-    const solLamports = await this.connection.getBalance(this._publicKey);
-
+  async getMintBalances(
+    mints: string[],
+    knownDecimals?: Record<string, number>,
+  ): Promise<WalletBalances> {
     const SOL = 'So11111111111111111111111111111111111111112';
     const unique = [...new Set(mints.filter(m => m !== SOL))];
+
+    // Derive all ATAs locally (zero RPC, pure math)
+    const atas = unique.map(mint =>
+      getAssociatedTokenAddressSync(new PublicKey(mint), this._publicKey),
+    );
+
+    // Single RPC call: wallet account (for SOL lamports) + all ATAs
+    const accounts = await this.connection.getMultipleAccountsInfo([
+      this._publicKey,
+      ...atas,
+    ]);
+
+    const solLamports = accounts[0]?.lamports ?? 0;
     const tokens: TokenBalance[] = [];
 
-    for (const mint of unique) {
-      const bal = await this.getTokenBalance(mint);
-      if (bal && bal.uiAmount > 0) tokens.push(bal);
+    for (let i = 0; i < unique.length; i++) {
+      const accountInfo = accounts[i + 1];
+      if (!accountInfo?.data || accountInfo.data.length < AccountLayout.span) continue;
+
+      const decoded = AccountLayout.decode(accountInfo.data);
+      const rawAmount = decoded.amount; // bigint
+      if (rawAmount === BigInt(0)) continue;
+
+      const mint = unique[i];
+      const decimals = knownDecimals?.[mint] ?? 6;
+      tokens.push({
+        mint,
+        amount: rawAmount.toString(),
+        uiAmount: Number(rawAmount) / 10 ** decimals,
+        decimals,
+      });
     }
 
     return {

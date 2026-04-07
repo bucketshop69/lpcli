@@ -43,8 +43,8 @@ export { WalletService } from './wallet.js';
 export { DLMMService } from './dlmm.js';
 
 // Jupiter
-export type { JupiterSwapParams, JupiterSwapResult, JupiterQuoteResult, UltraOrderResponse } from './jup.js';
-export { jupiterSwap, getJupiterQuote, getUltraOrder, USDC_MINT } from './jup.js';
+export type { JupiterSwapParams, JupiterSwapResult, UltraOrderResponse } from './jup.js';
+export { jupiterSwap, getUltraOrder, USDC_MINT } from './jup.js';
 
 // Funding operations
 export { fundedOpen, fundedClose, fundedClaim, calculateSplit, planSwaps, planSwapBack, executeSwaps } from './funding.js';
