@@ -4,7 +4,7 @@
 
 // Config
 export type { LPCLIConfig, FundingToken } from './config.js';
-export { loadConfig, SOL_MINT, LAMPORTS_PER_SOL, POSITION_RENT_LAMPORTS, feeReserveLamports } from './config.js';
+export { loadConfig, SOL_MINT, LAMPORTS_PER_SOL, POSITION_RENT_LAMPORTS, DEFAULT_FEE_RESERVE_SOL, feeReserveLamports } from './config.js';
 
 // Types
 export type {

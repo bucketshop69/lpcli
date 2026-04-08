@@ -4,7 +4,7 @@
  * Usage:
  *   lpcli claim <position_address> --pool <pool_address>
  *     Claims fees, then swaps any non-funding tokens back to funding token.
- *     SOL fee reserve (0.02 SOL) is preserved.
+ *     SOL fee reserve (from config feeReserveSol) is preserved.
  *
  *   lpcli claim <position_address> --pool <pool_address> --no-swap
  *     Claim without swapping (fee tokens stay as-is in wallet).
