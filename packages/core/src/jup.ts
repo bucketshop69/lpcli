@@ -77,7 +77,8 @@ interface UltraExecuteResponse {
 
 const ULTRA_API_BASE = 'https://lite-api.jup.ag/ultra/v1';
 // Well-known mints — re-export from config for backwards compat
-export { SOL_MINT } from './config.js';
+import { SOL_MINT } from './config.js';
+export { SOL_MINT };
 export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
 // ============================================================================

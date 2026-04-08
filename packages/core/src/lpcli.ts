@@ -99,13 +99,21 @@ export class LPCLI {
    */
   async getPoolInfo(address: string): Promise<PoolInfo> {
     const raw = await this.meteora.getPool(address);
+
+    // Resolve active bin from SDK when wallet/DLMM is initialised.
+    let activeBin = 0;
+    if (this.dlmm) {
+      const meta = await this.dlmm.getPoolMeta(address);
+      activeBin = meta.activeBinId;
+    }
+
     return {
       address: raw.address,
       name: raw.name,
       token_x: raw.token_x.symbol,
       token_y: raw.token_y.symbol,
       bin_step: raw.pool_config.bin_step,
-      active_bin: 0, // resolved on-chain via dlmm.getPoolMeta() when needed
+      active_bin: activeBin,
       current_price: raw.current_price,
       tvl: raw.tvl,
       volume_24h: getVolume24(raw.volume),

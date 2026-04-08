@@ -36,6 +36,9 @@ export async function runPool(args: string[]): Promise<void> {
 
   const lpcli = new LPCLI();
 
+  // Try to init wallet/DLMM so active_bin can be resolved on-chain.
+  try { await lpcli.getWallet(); } catch { /* read-only fallback */ }
+
   let info: PoolInfo;
   try {
     info = await lpcli.getPoolInfo(address);
@@ -53,6 +56,7 @@ Address: ${info.address}
   Fees 24h:      ${formatMoney(info.fee_24h)}
   APR:           ${formatPct(info.apr / 100)}
   APY:           ${formatPct(info.apy / 100)}
+  Active Bin:    ${info.active_bin || '(unavailable)'}
   Current Price: ${info.current_price.toFixed(6)}
   Bin Step:      ${info.bin_step} bps
   Has Farm:      ${info.has_farm ? 'Yes' : 'No'}${info.has_farm ? `  (Farm APR: ${formatPct(info.farm_apr / 100)})` : ''}

@@ -65,17 +65,34 @@ export interface Position {
   address: string;
   pool: string;
   pool_name: string;
-  status: 'in_range' | 'out_of_range' | 'closed';
-  deposited_x: number;
-  deposited_y: number;
+  status: 'in_range' | 'out_of_range_above' | 'out_of_range_below' | 'closed';
+  // Token info
+  token_x_mint: string;
+  token_y_mint: string;
+  token_x_decimals: number;
+  token_y_decimals: number;
+  // Current value (raw smallest unit)
   current_value_x: number;
   current_value_y: number;
-  pnl_usd: number | null; // best-effort, null if entry price unavailable
+  // UI-adjusted amounts
+  current_value_x_ui: number;
+  current_value_y_ui: number;
+  // Fees (raw)
   fees_earned_x: number;
   fees_earned_y: number;
+  // Fees (UI-adjusted)
+  fees_earned_x_ui: number;
+  fees_earned_y_ui: number;
+  // Range
   range_low: number;
   range_high: number;
   current_price: number;
+  total_bins: number;
+  bin_step: number;
+  // Deprecated — always 0, use getPositionDetail for entry tracking
+  deposited_x: number;
+  deposited_y: number;
+  pnl_usd: number | null;
   opened_at: number;
 }
 

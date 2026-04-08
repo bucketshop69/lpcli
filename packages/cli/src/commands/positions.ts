@@ -2,74 +2,100 @@
  * `lpcli positions` — list all open positions for the configured wallet.
  *
  * Usage:
- *   lpcli positions
- *
- * Requires wallet config.
+ *   lpcli positions                     List all positions (rich summary)
+ *   lpcli positions --detail <address>  Full detail for one position
  */
 
 import { LPCLI, type Position } from '@lpcli/core';
 
 // ---------------------------------------------------------------------------
-// Table renderer — plain string, no external deps
+// Helpers
 // ---------------------------------------------------------------------------
 
-function pad(str: string, width: number): string {
-  if (str.length >= width) return str.slice(0, width);
-  return str + ' '.repeat(width - str.length);
+function getFlag(args: string[], flag: string): string | undefined {
+  const i = args.indexOf(flag);
+  return i !== -1 ? args[i + 1] : undefined;
 }
 
 function formatStatus(s: Position['status']): string {
   if (s === 'in_range') return 'IN RANGE';
-  if (s === 'out_of_range') return 'OUT';
+  if (s === 'out_of_range_above') return 'OUT (above)';
+  if (s === 'out_of_range_below') return 'OUT (below)';
   return 'CLOSED';
 }
 
-function formatPnl(n: number | null): string {
-  if (n === null) return '—';
-  const sign = n >= 0 ? '+' : '';
-  return `${sign}$${n.toFixed(2)}`;
-}
+// ---------------------------------------------------------------------------
+// Rich list view
+// ---------------------------------------------------------------------------
 
-function formatFees(x: number, y: number): string {
-  return `${x.toFixed(4)} / ${y.toFixed(4)}`;
-}
+function renderList(positions: Position[]): void {
+  console.log();
+  for (let i = 0; i < positions.length; i++) {
+    const p = positions[i];
+    const status = formatStatus(p.status);
+    const valX = p.current_value_x_ui.toFixed(4);
+    const valY = p.current_value_y_ui.toFixed(4);
+    const feeX = p.fees_earned_x_ui.toFixed(6);
+    const feeY = p.fees_earned_y_ui.toFixed(6);
 
-function renderTable(positions: Position[]): void {
-  type Col = { header: string; width: number; get: (p: Position) => string };
-  const cols: Col[] = [
-    { header: 'Pool',        width: 16, get: (p) => p.pool_name.slice(0, 16) },
-    { header: 'Status',      width: 10, get: (p) => formatStatus(p.status) },
-    { header: 'P&L',         width: 10, get: (p) => formatPnl(p.pnl_usd) },
-    { header: 'Fees (X/Y)',  width: 24, get: (p) => formatFees(p.fees_earned_x, p.fees_earned_y) },
-    { header: 'Range Low',   width: 12, get: (p) => p.range_low.toFixed(4) },
-    { header: 'Range High',  width: 12, get: (p) => p.range_high.toFixed(4) },
-  ];
-
-  const sep = (left: string, mid: string, right: string, fill: string): string =>
-    left + cols.map((c) => fill.repeat(c.width + 2)).join(mid) + right;
-
-  const topLine    = sep('┌', '┬', '┐', '─');
-  const midLine    = sep('├', '┼', '┤', '─');
-  const bottomLine = sep('└', '┴', '┘', '─');
-  const headerRow  = '│' + cols.map((c) => ` ${pad(c.header, c.width)} `).join('│') + '│';
-
-  console.log(topLine);
-  console.log(headerRow);
-  console.log(midLine);
-
-  for (const pos of positions) {
-    const row = '│' + cols.map((c) => ` ${pad(c.get(pos), c.width)} `).join('│') + '│';
-    console.log(row);
+    console.log(`  [${i + 1}] ${p.pool_name}  |  ${status}`);
+    console.log(`      Position:  ${p.address}`);
+    console.log(`      Pool:      ${p.pool}`);
+    console.log(`      Value:     ${valX} X  +  ${valY} Y`);
+    console.log(`      Fees:      ${feeX} X  +  ${feeY} Y`);
+    console.log(`      Range:     ${p.range_low.toFixed(6)} — ${p.range_high.toFixed(6)}  (${p.total_bins} bins, ${p.bin_step} bps)`);
+    console.log(`      Price:     ${p.current_price.toFixed(6)}`);
+    console.log();
   }
+}
 
-  console.log(bottomLine);
+// ---------------------------------------------------------------------------
+// Detail view for a single position
+// ---------------------------------------------------------------------------
+
+function renderDetail(p: Position): void {
+  console.log(`
+Position Detail
+===============
+
+  Address:       ${p.address}
+  Pool:          ${p.pool}
+  Pool name:     ${p.pool_name}
+  Status:        ${formatStatus(p.status)}
+
+  Token X mint:  ${p.token_x_mint}
+  Token Y mint:  ${p.token_y_mint}
+  Token X dec:   ${p.token_x_decimals}
+  Token Y dec:   ${p.token_y_decimals}
+
+  Current Value
+    X (raw):     ${p.current_value_x}
+    X (UI):      ${p.current_value_x_ui.toFixed(6)}
+    Y (raw):     ${p.current_value_y}
+    Y (UI):      ${p.current_value_y_ui.toFixed(6)}
+
+  Unclaimed Fees
+    X (raw):     ${p.fees_earned_x}
+    X (UI):      ${p.fees_earned_x_ui.toFixed(6)}
+    Y (raw):     ${p.fees_earned_y}
+    Y (UI):      ${p.fees_earned_y_ui.toFixed(6)}
+
+  Price Range
+    Low:         ${p.range_low.toFixed(6)}
+    High:        ${p.range_high.toFixed(6)}
+    Current:     ${p.current_price.toFixed(6)}
+    Total bins:  ${p.total_bins}
+    Bin step:    ${p.bin_step} bps
+`);
 }
 
 // ---------------------------------------------------------------------------
 // Command entrypoint
 // ---------------------------------------------------------------------------
 
-export async function runPositions(): Promise<void> {
+export async function runPositions(args: string[] = []): Promise<void> {
+  const detailAddress = getFlag(args, '--detail');
+
   const lpcli = new LPCLI();
 
   let wallet;
@@ -83,15 +109,27 @@ export async function runPositions(): Promise<void> {
 
   const dlmm = lpcli.dlmm!;
   const walletAddress = wallet.getPublicKey().toBase58();
-  console.log(`\nFetching positions for ${walletAddress}...\n`);
+  console.log(`\nFetching positions for ${walletAddress}...`);
 
   const positions = await dlmm.getPositions(walletAddress);
 
   if (positions.length === 0) {
-    console.log('No open positions found.\n');
+    console.log('\nNo open positions found.\n');
     return;
   }
 
-  renderTable(positions);
-  console.log(`\n${positions.length} position(s) found.\n`);
+  // Detail mode: show one position
+  if (detailAddress) {
+    const found = positions.find((p) => p.address === detailAddress);
+    if (!found) {
+      console.error(`Position ${detailAddress} not found in wallet.`);
+      process.exit(1);
+    }
+    renderDetail(found);
+    return;
+  }
+
+  // List mode: show all positions
+  renderList(positions);
+  console.log(`${positions.length} position(s) found.\n`);
 }

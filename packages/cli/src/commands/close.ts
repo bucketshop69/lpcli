@@ -1,19 +1,21 @@
 /**
- * `lpcli close <position>` — close a position and swap back to funding token.
+ * `lpcli close` — interactive position close with swap-back.
  *
  * Usage:
- *   lpcli close <position_address> --pool <pool_address>
- *     Closes the position, withdraws all liquidity + claims fees,
- *     then swaps all proceeds back to the funding token.
- *     SOL fee reserve (0.02 SOL) is kept for future transactions.
+ *   lpcli close
+ *     Fetches all open positions, shows them, lets you pick one to close.
+ *     Automatically swaps proceeds back to funding token.
  *
- *   lpcli close <position_address> --pool <pool_address> --no-swap
- *     Close without swapping back (tokens stay as-is in wallet).
+ *   lpcli close --no-swap
+ *     Same flow but skips the swap-back (tokens stay as-is in wallet).
+ *
+ *   lpcli close <position_address> --pool <pool_address>
+ *     Direct close (legacy / scripting mode).
  */
 
 import { createInterface } from 'node:readline';
 import { LPCLI } from '@lpcli/core';
-import type { FundedCloseResult, ClosePositionResult } from '@lpcli/core';
+import type { Position, FundedCloseResult, ClosePositionResult } from '@lpcli/core';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -38,70 +40,38 @@ function ask(rl: ReturnType<typeof createRL>, question: string): Promise<string>
   });
 }
 
+function formatStatus(s: Position['status']): string {
+  if (s === 'in_range') return 'IN RANGE';
+  if (s === 'out_of_range_above') return 'OUT (above)';
+  if (s === 'out_of_range_below') return 'OUT (below)';
+  return 'CLOSED';
+}
+
 // ---------------------------------------------------------------------------
-// Command entrypoint
+// Display positions table
 // ---------------------------------------------------------------------------
 
-export async function runClose(args: string[]): Promise<void> {
-  const positionAddress = args[0];
-  if (!positionAddress) {
-    console.error('Usage: lpcli close <position_address> --pool <pool_address> [--no-swap]');
-    process.exit(1);
+function showPositions(positions: Position[]): void {
+  console.log();
+  for (let i = 0; i < positions.length; i++) {
+    const p = positions[i];
+    console.log(`  [${i + 1}] ${p.pool_name}  |  ${formatStatus(p.status)}`);
+    console.log(`      Position: ${p.address}`);
+    console.log(`      Pool:     ${p.pool}`);
+    console.log(`      Value:    ${p.current_value_x_ui.toFixed(4)} X  +  ${p.current_value_y_ui.toFixed(4)} Y`);
+    console.log(`      Fees:     ${p.fees_earned_x_ui.toFixed(6)} X  +  ${p.fees_earned_y_ui.toFixed(6)} Y`);
+    console.log(`      Range:    ${p.range_low.toFixed(6)} — ${p.range_high.toFixed(6)}  (${p.total_bins} bins)`);
+    console.log();
   }
+}
 
-  const pool = getFlag(args, '--pool');
-  if (!pool) {
-    console.error('--pool <pool_address> is required to resolve token mints for swap-back.');
-    process.exit(1);
-  }
+// ---------------------------------------------------------------------------
+// Print close results
+// ---------------------------------------------------------------------------
 
-  const noSwap = hasFlag(args, '--no-swap');
-
-  const lpcli = new LPCLI();
-  try {
-    await lpcli.getWallet();
-  } catch (err: unknown) {
-    console.error('Wallet error:', err instanceof Error ? err.message : String(err));
-    console.error('Run `lpcli init` to set up your wallet.');
-    process.exit(1);
-  }
-
-  const funding = lpcli.getFundingToken();
-
-  // Confirmation prompt
-  const rl = createRL();
+function printCloseResult(result: ClosePositionResult): void {
   console.log(`
-Close position: ${positionAddress}
-  Pool:           ${pool}
-  Swap back to:   ${noSwap ? '(none — tokens stay in wallet)' : `${funding.symbol} (${funding.mint.slice(0, 8)}...)`}
-  SOL fee reserve: ${lpcli.config.feeReserveSol} SOL (kept for future txs)
-
-  This will withdraw all liquidity and claim all fees.
-`);
-
-  const confirm = await ask(rl, 'Confirm? [y/N] ');
-  rl.close();
-
-  if (confirm.toLowerCase() !== 'y') {
-    console.log('Aborted.');
-    process.exit(0);
-  }
-
-  // ── No-swap mode: just close ───────────────────────────────────────────
-
-  if (noSwap) {
-    console.log('\nClosing position...');
-
-    let result: ClosePositionResult;
-    try {
-      result = await lpcli.dlmm!.closePosition(positionAddress);
-    } catch (err: unknown) {
-      console.error('Failed to close position:', err instanceof Error ? err.message : String(err));
-      process.exit(1);
-    }
-
-    console.log(`
-Position closed successfully!
+Position closed!
 
   Withdrawn X:    ${result.withdrawn_x}
   Withdrawn Y:    ${result.withdrawn_y}
@@ -109,23 +79,11 @@ Position closed successfully!
   Claimed fees Y: ${result.claimed_fees_y}
   TX:             ${result.tx}
 `);
-    return;
-  }
+}
 
-  // ── Funded mode: close + swap back ─────────────────────────────────────
-
-  console.log('\nClosing position & swapping back...');
-
-  let result: FundedCloseResult;
-  try {
-    result = await lpcli.closeToFunding(positionAddress, pool);
-  } catch (err: unknown) {
-    console.error('Failed:', err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  }
-
+function printFundedCloseResult(result: FundedCloseResult): void {
   console.log(`
-Position closed successfully!
+Position closed!
 
   Withdrawn X:    ${result.close.withdrawn_x}
   Withdrawn Y:    ${result.close.withdrawn_y}
@@ -140,4 +98,126 @@ Position closed successfully!
   }
 
   console.log();
+}
+
+// ---------------------------------------------------------------------------
+// Command entrypoint
+// ---------------------------------------------------------------------------
+
+export async function runClose(args: string[]): Promise<void> {
+  const noSwap = hasFlag(args, '--no-swap');
+
+  const lpcli = new LPCLI();
+  let wallet;
+  try {
+    wallet = await lpcli.getWallet();
+  } catch (err: unknown) {
+    console.error('Wallet error:', err instanceof Error ? err.message : String(err));
+    console.error('Run `lpcli init` to set up your wallet.');
+    process.exit(1);
+  }
+
+  const dlmm = lpcli.dlmm!;
+  const funding = lpcli.getFundingToken();
+
+  // ── Direct mode: position address passed as arg ────────────────────────
+  const firstArg = args[0];
+  const looksLikeAddress = firstArg && !firstArg.startsWith('--') && firstArg.length > 30;
+
+  if (looksLikeAddress) {
+    const positionAddress = firstArg;
+    const pool = getFlag(args, '--pool');
+    if (!pool) {
+      console.error('Direct mode requires --pool <pool_address>.');
+      console.error('Or run `lpcli close` without args for interactive mode.');
+      process.exit(1);
+    }
+    await executeClose(lpcli, positionAddress, pool, noSwap, funding.symbol);
+    return;
+  }
+
+  // ── Interactive mode: fetch positions and let user pick ────────────────
+  const walletAddress = wallet.getPublicKey().toBase58();
+  console.log(`\nFetching positions for ${walletAddress}...`);
+
+  const positions = await dlmm.getPositions(walletAddress);
+
+  if (positions.length === 0) {
+    console.log('\nNo open positions found.\n');
+    return;
+  }
+
+  showPositions(positions);
+
+  let selected: Position;
+
+  if (positions.length === 1) {
+    selected = positions[0];
+    const rl = createRL();
+    console.log(`Only one position found: ${selected.pool_name} (${selected.address.slice(0, 12)}...)`);
+    const confirm = await ask(rl, `Close this position${noSwap ? '' : ` and swap back to ${funding.symbol}`}? [y/N] `);
+    rl.close();
+    if (confirm.toLowerCase() !== 'y') {
+      console.log('Aborted.');
+      return;
+    }
+  } else {
+    const rl = createRL();
+    const choice = await ask(rl, `Select position to close [1-${positions.length}]: `);
+    rl.close();
+
+    const idx = parseInt(choice, 10) - 1;
+    if (isNaN(idx) || idx < 0 || idx >= positions.length) {
+      console.error('Invalid selection.');
+      process.exit(1);
+    }
+
+    selected = positions[idx];
+
+    const rl2 = createRL();
+    console.log(`\nClosing: ${selected.pool_name} (${selected.address.slice(0, 12)}...)`);
+    const confirm = await ask(rl2, `Confirm close${noSwap ? '' : ` + swap back to ${funding.symbol}`}? [y/N] `);
+    rl2.close();
+
+    if (confirm.toLowerCase() !== 'y') {
+      console.log('Aborted.');
+      return;
+    }
+  }
+
+  await executeClose(lpcli, selected.address, selected.pool, noSwap, funding.symbol);
+}
+
+// ---------------------------------------------------------------------------
+// Execute close (shared between direct and interactive modes)
+// ---------------------------------------------------------------------------
+
+async function executeClose(
+  lpcli: LPCLI,
+  positionAddress: string,
+  pool: string,
+  noSwap: boolean,
+  fundingSymbol: string,
+): Promise<void> {
+  if (noSwap) {
+    console.log('\nClosing position...');
+    let result: ClosePositionResult;
+    try {
+      result = await lpcli.dlmm!.closePosition(positionAddress);
+    } catch (err: unknown) {
+      console.error('Failed to close position:', err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+    printCloseResult(result);
+  } else {
+    console.log(`\nClosing position & swapping back to ${fundingSymbol}...`);
+    let result: FundedCloseResult;
+    try {
+      result = await lpcli.closeToFunding(positionAddress, pool);
+    } catch (err: unknown) {
+      console.error('Failed:', err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+    printFundedCloseResult(result);
+  }
 }

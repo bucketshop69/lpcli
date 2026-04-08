@@ -41,7 +41,7 @@ async function main(): Promise<void> {
       break;
 
     case 'positions':
-      await runPositions();
+      await runPositions(args);
       break;
 
     case 'open':

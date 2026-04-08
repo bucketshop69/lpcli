@@ -567,7 +567,8 @@ export class DLMMService {
       async (instance, slippage) => {
         const activeBinId = instance.lbPair.activeId;
         finalBinStep = instance.lbPair.binStep;
-        const halfWidth = params.widthBins ?? Math.max(10, Math.floor(50 / finalBinStep));
+        // Max 69 bins per position. Default: use all 69 (halfWidth = 34).
+        const halfWidth = params.widthBins ?? 34;
         finalMinBinId = activeBinId - halfWidth;
         finalMaxBinId = activeBinId + halfWidth;
 
@@ -744,6 +745,14 @@ export class DLMMService {
     for (const [lbPairAddress, info] of allPositions) {
       const binStep: number = info.lbPair.binStep;
       const activeBinId: number = info.lbPair.activeId;
+      const tokenXDecimals = info.tokenX.mint.decimals;
+      const tokenYDecimals = info.tokenY.mint.decimals;
+      const tokenXMint = info.tokenX.mint.address.toBase58();
+      const tokenYMint = info.tokenY.mint.address.toBase58();
+
+      const tokenXSymbol = tokenXMint.slice(0, 4);
+      const tokenYSymbol = tokenYMint.slice(0, 4);
+      const poolName = `${tokenXSymbol}-${tokenYSymbol}`;
 
       for (const lbPos of info.lbPairPositionsData) {
         const posData = lbPos.positionData;
@@ -753,31 +762,47 @@ export class DLMMService {
         const status: Position['status'] =
           activeBinId >= lowerBin && activeBinId <= upperBin
             ? 'in_range'
-            : 'out_of_range';
+            : activeBinId > upperBin
+              ? 'out_of_range_above'
+              : 'out_of_range_below';
 
-        const rangeLow = parseFloat(sdk.getPriceOfBinByBinId(lowerBin, binStep).toString());
-        const rangeHigh = parseFloat(sdk.getPriceOfBinByBinId(upperBin, binStep).toString());
-        const currentPrice = parseFloat(sdk.getPriceOfBinByBinId(activeBinId, binStep).toString());
+        // SDK bin prices are raw — adjust for decimal difference to get human-readable Y-per-X price.
+        const decimalAdj = 10 ** (tokenXDecimals - tokenYDecimals);
+        const rangeLow = parseFloat(sdk.getPriceOfBinByBinId(lowerBin, binStep).toString()) * decimalAdj;
+        const rangeHigh = parseFloat(sdk.getPriceOfBinByBinId(upperBin, binStep).toString()) * decimalAdj;
+        const currentPrice = parseFloat(sdk.getPriceOfBinByBinId(activeBinId, binStep).toString()) * decimalAdj;
+        const totalBins = upperBin - lowerBin + 1;
 
-        const tokenXSymbol = info.tokenX.mint.address.toBase58().slice(0, 4);
-        const tokenYSymbol = info.tokenY.mint.address.toBase58().slice(0, 4);
-        const poolName = `${tokenXSymbol}-${tokenYSymbol}`;
+        const rawValueX = parseFloat(posData.totalXAmount);
+        const rawValueY = parseFloat(posData.totalYAmount);
+        const rawFeesX = posData.feeX.toNumber();
+        const rawFeesY = posData.feeY.toNumber();
 
         results.push({
           address: lbPos.publicKey.toBase58(),
           pool: lbPairAddress,
           pool_name: poolName,
           status,
-          deposited_x: 0,
-          deposited_y: 0,
-          current_value_x: parseFloat(posData.totalXAmount),
-          current_value_y: parseFloat(posData.totalYAmount),
-          pnl_usd: null,
-          fees_earned_x: posData.feeX.toNumber(),
-          fees_earned_y: posData.feeY.toNumber(),
+          token_x_mint: tokenXMint,
+          token_y_mint: tokenYMint,
+          token_x_decimals: tokenXDecimals,
+          token_y_decimals: tokenYDecimals,
+          current_value_x: rawValueX,
+          current_value_y: rawValueY,
+          current_value_x_ui: rawValueX / 10 ** tokenXDecimals,
+          current_value_y_ui: rawValueY / 10 ** tokenYDecimals,
+          fees_earned_x: rawFeesX,
+          fees_earned_y: rawFeesY,
+          fees_earned_x_ui: rawFeesX / 10 ** tokenXDecimals,
+          fees_earned_y_ui: rawFeesY / 10 ** tokenYDecimals,
           range_low: rangeLow,
           range_high: rangeHigh,
           current_price: currentPrice,
+          total_bins: totalBins,
+          bin_step: binStep,
+          deposited_x: 0,
+          deposited_y: 0,
+          pnl_usd: null,
           opened_at: posData.lastUpdatedAt.toNumber(),
         });
       }
