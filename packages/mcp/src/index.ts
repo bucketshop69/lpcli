@@ -18,13 +18,31 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { LPCLI } from '@lpcli/core';
+import type { ReadinessStatus } from '@lpcli/core';
 
 // ---------------------------------------------------------------------------
-// LPCLI instance — lazily initialised with wallet when needed
+// Singleton LPCLI — reuses DLMM cache across tool calls
 // ---------------------------------------------------------------------------
 
-function createLpcli(): LPCLI {
-  return new LPCLI();
+let _lpcli: LPCLI | null = null;
+
+function getLpcli(): LPCLI {
+  if (!_lpcli) _lpcli = new LPCLI();
+  return _lpcli;
+}
+
+/** Cached readiness — re-checked when not ready (OWS might be installed mid-session). */
+let _readiness: ReadinessStatus | null = null;
+
+async function requireWallet(): Promise<LPCLI> {
+  const lpcli = getLpcli();
+  if (!_readiness?.ready) {
+    _readiness = await lpcli.checkReady();
+  }
+  if (!_readiness.ready) {
+    throw new Error(`Wallet not available: ${_readiness.error}`);
+  }
+  return lpcli;
 }
 
 // ---------------------------------------------------------------------------
@@ -35,6 +53,24 @@ const server = new McpServer({
   name: 'lpcli',
   version: '0.1.0',
 });
+
+// ── check_ready ────────────────────────────────────────────────────────────
+
+server.tool(
+  'check_ready',
+  'Check if the system is ready to sign transactions. Returns OWS status, wallet availability, and Solana address. Call this before any wallet-requiring operation.',
+  {},
+  async () => {
+    const lpcli = getLpcli();
+    _readiness = await lpcli.checkReady();
+
+    const text = _readiness.ready
+      ? `Ready ✓\n  Wallet: ${lpcli.config.wallet}\n  Address: ${_readiness.address}\n  Cluster: ${lpcli.config.cluster}`
+      : `Not ready ✗\n  ${_readiness.error}`;
+
+    return { content: [{ type: 'text', text }] };
+  }
+);
 
 // ── discover_pools ──────────────────────────────────────────────────────────
 
@@ -47,7 +83,7 @@ server.tool(
     limit: z.number().int().min(1).max(50).default(10).describe('Max results'),
   },
   async ({ token, sort_by, limit }) => {
-    const lpcli = createLpcli();
+    const lpcli = getLpcli();
     const pools = await lpcli.discoverPools(token, sort_by, limit);
 
     if (pools.length === 0) {
@@ -75,7 +111,7 @@ server.tool(
     address: z.string().describe('Pool address (base58)'),
   },
   async ({ address }) => {
-    const lpcli = createLpcli();
+    const lpcli = getLpcli();
     const pool = await lpcli.getPoolInfo(address);
 
     const text =
@@ -103,7 +139,7 @@ server.tool(
     wallet: z.string().optional().describe('Wallet address (base58). Defaults to configured wallet.'),
   },
   async ({ wallet }) => {
-    const lpcli = createLpcli();
+    const lpcli = await requireWallet();
     const w = await lpcli.getWallet();
     const walletAddr = wallet ?? w.getPublicKey().toBase58();
     const positions = await lpcli.dlmm!.getPositions(walletAddr);
@@ -139,8 +175,7 @@ server.tool(
     width_bins: z.number().int().optional().describe('Half-width in bins (default: auto based on bin step)'),
   },
   async ({ pool, amount_x, amount_y, strategy, width_bins }) => {
-    const lpcli = createLpcli();
-    await lpcli.getWallet();
+    const lpcli = await requireWallet();
 
     const result = await lpcli.dlmm!.openPosition({
       pool,
@@ -170,8 +205,7 @@ server.tool(
     position: z.string().describe('Position address (base58)'),
   },
   async ({ position }) => {
-    const lpcli = createLpcli();
-    await lpcli.getWallet();
+    const lpcli = await requireWallet();
 
     const result = await lpcli.dlmm!.closePosition(position);
 
@@ -194,8 +228,7 @@ server.tool(
     position: z.string().describe('Position address (base58)'),
   },
   async ({ position }) => {
-    const lpcli = createLpcli();
-    await lpcli.getWallet();
+    const lpcli = await requireWallet();
 
     const result = await lpcli.dlmm!.claimFees(position);
 

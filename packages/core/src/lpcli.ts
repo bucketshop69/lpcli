@@ -5,7 +5,7 @@
 // CLI commands and agents should go through this class.
 // ============================================================================
 
-import type { ScoredPool, PoolInfo, FundedOpenResult, FundedCloseResult, FundedClaimResult } from './types.js';
+import type { ScoredPool, PoolInfo, FundedOpenResult, FundedCloseResult, FundedClaimResult, ReadinessStatus } from './types.js';
 import type { LPCLIConfig, FundingToken } from './config.js';
 import { loadConfig } from './config.js';
 import { MeteoraClient } from './client.js';
@@ -26,6 +26,39 @@ export class LPCLI {
   constructor(config?: Partial<LPCLIConfig>) {
     this.config = { ...loadConfig(), ...config };
     this.meteora = new MeteoraClient({ rpcUrl: this.config.rpcUrl, cluster: this.config.cluster });
+  }
+
+  /**
+   * Pre-flight readiness check — can we sign transactions?
+   *
+   * Verifies: OWS SDK importable → wallet exists → has Solana account.
+   * Cheap to call (no RPC), safe to call repeatedly.
+   */
+  async checkReady(): Promise<ReadinessStatus> {
+    // 1. Can we import OWS?
+    let ows: { getWallet(name: string): { accounts: { chainId: string; address: string }[] } };
+    try {
+      const dynamicImport = new Function('specifier', 'return import(specifier)');
+      ows = await dynamicImport('@open-wallet-standard/core');
+    } catch {
+      return { ready: false, ows_installed: false, wallet_found: false, error: 'OWS SDK not installed. Run: npm install -g @open-wallet-standard/core' };
+    }
+
+    // 2. Does the named wallet exist?
+    let wallet: { accounts: { chainId: string; address: string }[] };
+    try {
+      wallet = ows.getWallet(this.config.wallet);
+    } catch {
+      return { ready: false, ows_installed: true, wallet_found: false, error: `OWS wallet "${this.config.wallet}" not found. Run: ows wallet create --name ${this.config.wallet}` };
+    }
+
+    // 3. Does it have a Solana account?
+    const solanaAccount = wallet.accounts.find(a => a.chainId.startsWith('solana:'));
+    if (!solanaAccount) {
+      return { ready: false, ows_installed: true, wallet_found: true, error: `OWS wallet "${this.config.wallet}" has no Solana account.` };
+    }
+
+    return { ready: true, ows_installed: true, wallet_found: true, address: solanaAccount.address };
   }
 
   /**

@@ -180,6 +180,23 @@ export interface ClosePositionResult {
   tx: string;
 }
 
+/**
+ * Result of a system readiness check.
+ * Agents and MCP servers call this before attempting wallet operations.
+ */
+export interface ReadinessStatus {
+  /** True when wallet is initialised and ready to sign. */
+  ready: boolean;
+  /** OWS SDK can be imported. */
+  ows_installed: boolean;
+  /** Named wallet exists in OWS. */
+  wallet_found: boolean;
+  /** Solana public key (base58) when wallet is found. */
+  address?: string;
+  /** Human-readable error when not ready. */
+  error?: string;
+}
+
 export interface MeteoraClientOptions {
   rpcUrl: string;
   cluster: 'mainnet' | 'devnet';

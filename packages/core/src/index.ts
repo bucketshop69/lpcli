@@ -21,6 +21,7 @@ export type {
   FundedClaimResult,
   MeteoraClientOptions,
   ScoringWeights,
+  ReadinessStatus,
 } from './types.js';
 
 // DLMMServiceOptions lives in dlmm.ts (it references WalletService)
