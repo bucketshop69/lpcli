@@ -55,5 +55,9 @@ export type { LiquiditySplit } from './funding.js';
 export type { TokenInfo } from './tokens.js';
 export { TokenRegistry } from './tokens.js';
 
+// Pacifica
+export type { PacificaSignatureHeader, PacificaRequestEnvelope } from './pacifica.js';
+export { preparePacificaMessage, signPacificaRequest } from './pacifica.js';
+
 // LPCLI
 export { LPCLI } from './lpcli.js';
