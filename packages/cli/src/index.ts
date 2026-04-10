@@ -23,6 +23,7 @@ import { runClose }     from './commands/close.js';
 import { runClaim }     from './commands/claim.js';
 import { runWallet }    from './commands/wallet.js';
 import { runSwap }      from './commands/swap.js';
+import { runPerps }     from './commands/perps.js';
 
 const [, , command, ...args] = process.argv;
 
@@ -64,6 +65,10 @@ async function main(): Promise<void> {
       await runSwap(args);
       break;
 
+    case 'perps':
+      await runPerps(args);
+      break;
+
     case undefined:
     case '--help':
     case '-h':
@@ -95,6 +100,7 @@ Usage:
   lpcli wallet balance         SOL + all SPL token balances
   lpcli wallet transfer        Send SOL or tokens to an address
   lpcli swap                   Swap tokens via Jupiter Ultra API
+  lpcli perps                  Pacifica perpetuals (balance, deposit, withdraw)
 
 Options:
   --help, -h                   Show this help

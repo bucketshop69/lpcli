@@ -55,9 +55,33 @@ export type { LiquiditySplit } from './funding.js';
 export type { TokenInfo } from './tokens.js';
 export { TokenRegistry } from './tokens.js';
 
-// Pacifica
+// Pacifica — signing
 export type { PacificaSignatureHeader, PacificaRequestEnvelope } from './pacifica.js';
 export { preparePacificaMessage, signPacificaRequest } from './pacifica.js';
+
+// Pacifica — REST client
+export type {
+  PacificaMarketInfo,
+  PacificaPriceInfo,
+  PacificaAccountInfo,
+  PacificaPosition,
+} from './pacifica-client.js';
+export { PacificaClient, PacificaApiError, PACIFICA_REST_URL } from './pacifica-client.js';
+
+// Pacifica — deposit (on-chain instruction, unsigned)
+export {
+  createDepositInstruction,
+  buildDepositTransaction,
+  PACIFICA_PROGRAM_ID,
+  PACIFICA_VAULT_PDA,
+  PACIFICA_VAULT_USDC_ATA,
+  PACIFICA_EVENT_AUTHORITY,
+  PACIFICA_USDC_MINT,
+  PACIFICA_MIN_DEPOSIT_USDC,
+} from './pacifica-deposit.js';
+
+// Pacifica — withdraw (signed REST request)
+export { requestWithdrawal } from './pacifica-withdraw.js';
 
 // LPCLI
 export { LPCLI } from './lpcli.js';

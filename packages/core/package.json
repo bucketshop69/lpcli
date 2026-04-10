@@ -23,6 +23,7 @@
     "test:e2e:poolmeta": "node --import tsx --test tests/poolmeta.e2e.ts",
     "test:e2e:roundtrip": "node --import tsx --test tests/roundtrip.e2e.ts",
     "test:e2e:signing": "node --import tsx --test tests/pacifica-signing.e2e.ts",
+    "test:e2e:deposit": "node --import tsx --test tests/pacifica-deposit.e2e.ts",
     "dev": "node --import tsx --watch tests/core.e2e.ts"
   },
   "dependencies": {
