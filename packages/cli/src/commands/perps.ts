@@ -2,9 +2,12 @@
  * `lpcli perps` — Pacifica perpetuals operations.
  *
  * Usage:
- *   lpcli perps balance                             Show Pacifica account balance
- *   lpcli perps deposit <amount>  [--yes]           Deposit USDC to Pacifica
- *   lpcli perps withdraw <amount> [--yes]           Withdraw USDC from Pacifica
+ *   lpcli perps balance                                    Show Pacifica account balance
+ *   lpcli perps deposit <amount>  [--yes]                  Deposit USDC to Pacifica
+ *   lpcli perps withdraw <amount> [--yes]                  Withdraw USDC from Pacifica
+ *   lpcli perps trade <symbol> <long|short> <size> [--yes] Place a market order
+ *   lpcli perps close <symbol> [--yes]                     Close an open position
+ *   lpcli perps cancel [--yes]                             Cancel all open orders
  */
 
 import { createInterface } from 'node:readline';
@@ -13,6 +16,10 @@ import {
   PacificaClient,
   buildDepositTransaction,
   requestWithdrawal,
+  createMarketOrder,
+  cancelAllOrders,
+  closePosition,
+  roundToLotSize,
   PACIFICA_MIN_DEPOSIT_USDC,
 } from '@lpcli/core';
 
@@ -182,6 +189,180 @@ async function runWithdraw(args: string[]): Promise<void> {
   console.log('Note: Pacifica processes withdrawals to your wallet. Check your balance shortly.\n');
 }
 
+async function runTrade(args: string[]): Promise<void> {
+  const symbol = args[0]?.toUpperCase();
+  const direction = args[1]?.toLowerCase();
+  const sizeRaw = args[2];
+  const autoConfirm = hasFlag(args, '--yes');
+
+  if (!symbol || !direction || !sizeRaw) {
+    console.error('Usage: lpcli perps trade <symbol> <long|short> <size> [--yes]');
+    console.error('  symbol: Market symbol (e.g. BTC, ETH, SOL)');
+    console.error('  long/short: Trade direction');
+    console.error('  size: Position size in asset units (e.g. 0.01 BTC)');
+    process.exit(1);
+  }
+
+  if (direction !== 'long' && direction !== 'short') {
+    console.error('Direction must be "long" or "short".');
+    process.exit(1);
+  }
+
+  const size = parseFloat(sizeRaw);
+  if (isNaN(size) || size <= 0) {
+    console.error('Size must be a positive number.');
+    process.exit(1);
+  }
+
+  const side = direction === 'long' ? 'bid' : 'ask' as const;
+
+  const lpcli = new LPCLI();
+  const wallet = await lpcli.getWallet();
+  const client = new PacificaClient();
+
+  // Validate symbol and get lot size
+  const markets = await client.getMarkets();
+  const market = markets.find((m) => m.symbol.toUpperCase() === symbol);
+  if (!market) {
+    const available = markets.map((m) => m.symbol).join(', ');
+    console.error(`Unknown symbol: ${symbol}. Available: ${available}`);
+    process.exit(1);
+  }
+
+  const rounded = roundToLotSize(size, market);
+  if (rounded <= 0) {
+    console.error(`Size ${size} is below minimum lot size ${market.lot_size} for ${symbol}.`);
+    process.exit(1);
+  }
+
+  // Get current price for display
+  const prices = await client.getPrices();
+  const priceInfo = prices.find((p) => p.symbol === market.symbol);
+  const markPrice = priceInfo ? parseFloat(priceInfo.mark) : 0;
+
+  console.log(`\nMarket Order:`);
+  console.log(`  Symbol:    ${market.symbol}`);
+  console.log(`  Direction: ${direction.toUpperCase()}`);
+  console.log(`  Size:      ${rounded} ${market.symbol}`);
+  if (markPrice > 0) {
+    console.log(`  Mark Price: $${markPrice.toLocaleString()}`);
+    console.log(`  Notional:  ~$${(rounded * markPrice).toFixed(2)}`);
+  }
+  console.log(`  Slippage:  1%`);
+  console.log('');
+
+  if (!autoConfirm) {
+    const confirm = await ask('Confirm trade? [y/N] ');
+    if (confirm.toLowerCase() !== 'y') {
+      console.log('Aborted.');
+      process.exit(0);
+    }
+  }
+
+  const result = await createMarketOrder(wallet, {
+    symbol: market.symbol,
+    side,
+    amount: rounded,
+    slippagePercent: 1,
+  }, client);
+
+  console.log(`Order placed! ID: ${result.orderId}`);
+  console.log(`  ${direction.toUpperCase()} ${rounded} ${market.symbol}`);
+  console.log('');
+}
+
+async function runClosePosition(args: string[]): Promise<void> {
+  const symbol = args[0]?.toUpperCase();
+  const autoConfirm = hasFlag(args, '--yes');
+
+  if (!symbol) {
+    console.error('Usage: lpcli perps close <symbol> [--yes]');
+    console.error('  symbol: Market symbol of position to close (e.g. BTC, ETH, SOL)');
+    process.exit(1);
+  }
+
+  const lpcli = new LPCLI();
+  const wallet = await lpcli.getWallet();
+  const client = new PacificaClient();
+  const address = wallet.getPublicKey().toBase58();
+
+  // Find the position
+  const positions = await client.getPositions(address);
+  const pos = positions.find((p) => p.symbol.toUpperCase() === symbol);
+
+  if (!pos) {
+    console.error(`No open position for ${symbol}.`);
+    const open = positions.map((p) => p.symbol);
+    if (open.length > 0) {
+      console.error(`Open positions: ${open.join(', ')}`);
+    }
+    process.exit(1);
+  }
+
+  const size = parseFloat(pos.amount);
+  const side = pos.side === 'bid' ? 'LONG' : 'SHORT';
+  const entry = parseFloat(pos.entry_price);
+
+  console.log(`\nClose Position:`);
+  console.log(`  Symbol:      ${pos.symbol}`);
+  console.log(`  Side:        ${side}`);
+  console.log(`  Size:        ${size}`);
+  console.log(`  Entry Price: $${entry.toLocaleString()}`);
+  console.log('');
+
+  if (!autoConfirm) {
+    const confirm = await ask('Confirm close? [y/N] ');
+    if (confirm.toLowerCase() !== 'y') {
+      console.log('Aborted.');
+      process.exit(0);
+    }
+  }
+
+  const result = await closePosition(wallet, symbol, client);
+  if (result) {
+    console.log(`Close order placed! ID: ${result.orderId}`);
+  } else {
+    console.error('Failed to close position.');
+    process.exit(1);
+  }
+  console.log('');
+}
+
+async function runCancel(args: string[]): Promise<void> {
+  const autoConfirm = hasFlag(args, '--yes');
+
+  const lpcli = new LPCLI();
+  const wallet = await lpcli.getWallet();
+  const client = new PacificaClient();
+  const address = wallet.getPublicKey().toBase58();
+
+  // Show current open orders
+  const orders = await client.getOpenOrders(address);
+  if (orders.length === 0) {
+    console.log('No open orders to cancel.');
+    return;
+  }
+
+  console.log(`\nOpen Orders (${orders.length}):`);
+  for (const o of orders) {
+    const side = o.side === 'bid' ? 'BUY' : 'SELL';
+    console.log(`  ${o.order_id}: ${side} ${o.amount} ${o.symbol} @ $${o.price}`);
+  }
+  console.log('');
+
+  if (!autoConfirm) {
+    const confirm = await ask(`Cancel all ${orders.length} order(s)? [y/N] `);
+    if (confirm.toLowerCase() !== 'y') {
+      console.log('Aborted.');
+      process.exit(0);
+    }
+  }
+
+  await cancelAllOrders(wallet, client);
+  console.log(`Cancelled ${orders.length} order(s).`);
+  console.log('');
+}
+
 // ---------------------------------------------------------------------------
 // Entrypoint
 // ---------------------------------------------------------------------------
@@ -203,6 +384,18 @@ export async function runPerps(args: string[]): Promise<void> {
         await runWithdraw(args.slice(1));
         break;
 
+      case 'trade':
+        await runTrade(args.slice(1));
+        break;
+
+      case 'close':
+        await runClosePosition(args.slice(1));
+        break;
+
+      case 'cancel':
+        await runCancel(args.slice(1));
+        break;
+
       case undefined:
       case '--help':
       case '-h':
@@ -210,9 +403,12 @@ export async function runPerps(args: string[]): Promise<void> {
 lpcli perps — Pacifica perpetuals
 
 Usage:
-  lpcli perps balance                Show Pacifica account balance & margin
-  lpcli perps deposit <amount>       Deposit USDC to Pacifica
-  lpcli perps withdraw <amount>      Withdraw USDC from Pacifica
+  lpcli perps balance                        Show Pacifica account balance & margin
+  lpcli perps deposit <amount>               Deposit USDC to Pacifica
+  lpcli perps withdraw <amount>              Withdraw USDC from Pacifica
+  lpcli perps trade <symbol> <long|short> <size>  Place a market order
+  lpcli perps close <symbol>                 Close an open position
+  lpcli perps cancel                         Cancel all open orders
 
 Options:
   --yes                              Skip confirmation prompt
@@ -221,7 +417,7 @@ Options:
 
       default:
         console.error(`Unknown perps subcommand: ${subcommand}`);
-        console.error('Usage: lpcli perps [balance|deposit|withdraw]');
+        console.error('Usage: lpcli perps [balance|deposit|withdraw|trade|close|cancel]');
         process.exit(1);
     }
   } catch (err: unknown) {

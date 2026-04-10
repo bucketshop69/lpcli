@@ -65,6 +65,7 @@ export type {
   PacificaPriceInfo,
   PacificaAccountInfo,
   PacificaPosition,
+  PacificaOrder,
 } from './pacifica-client.js';
 export { PacificaClient, PacificaApiError, PACIFICA_REST_URL } from './pacifica-client.js';
 
@@ -82,6 +83,17 @@ export {
 
 // Pacifica — withdraw (signed REST request)
 export { requestWithdrawal } from './pacifica-withdraw.js';
+
+// Pacifica — trade execution (signed REST requests)
+export type { MarketOrderParams, MarketOrderResult } from './pacifica-trade.js';
+export {
+  createMarketOrder,
+  cancelOrder,
+  cancelAllOrders,
+  closePosition,
+  roundToLotSize,
+  validateOrder,
+} from './pacifica-trade.js';
 
 // LPCLI
 export { LPCLI } from './lpcli.js';

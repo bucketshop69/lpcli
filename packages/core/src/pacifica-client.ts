@@ -66,6 +66,20 @@ export interface PacificaPosition {
   updated_at: number;
 }
 
+export interface PacificaOrder {
+  order_id: number;
+  symbol: string;
+  side: 'bid' | 'ask';
+  price: string;
+  amount: string;
+  filled_amount: string;
+  order_type: string;
+  tif: string;
+  reduce_only: boolean;
+  client_order_id: string;
+  created_at: number;
+}
+
 // ============================================================================
 // Errors
 // ============================================================================
@@ -106,30 +120,48 @@ export class PacificaClient {
     return this.get<PacificaPosition[]>(`/positions?account=${address}`);
   }
 
+  /** GET /orders?account=<address> — open orders. */
+  async getOpenOrders(address: string): Promise<PacificaOrder[]> {
+    return this.get<PacificaOrder[]>(`/orders?account=${address}`);
+  }
+
   // --- Authenticated endpoints ---
 
   /**
-   * POST /account/withdraw — submit a signed withdrawal request.
-   * The caller is responsible for building the envelope via signPacificaRequest.
+   * Generic authenticated POST — sends a signed envelope to the given path.
+   * Returns the parsed response body (the `data` field if present, else full body).
    */
-  async requestWithdrawal(envelope: PacificaRequestEnvelope): Promise<void> {
-    const resp = await fetch(`${this.baseUrl}/account/withdraw`, {
+  async postSigned<T = unknown>(path: string, envelope: PacificaRequestEnvelope): Promise<T> {
+    const resp = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(envelope),
     });
 
-    if (!resp.ok) {
-      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
-        code?: number;
-        error?: string;
-      };
+    const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+      success?: boolean;
+      data?: T;
+      code?: number;
+      error?: string;
+      order_id?: number;
+    };
+
+    if (!resp.ok || body.success === false) {
       throw new PacificaApiError(
         body.code ?? resp.status,
         resp.status,
-        body.error ?? `Withdrawal failed: ${resp.status}`,
+        body.error ?? `Request failed: ${resp.status}`,
       );
     }
+
+    return (body.data ?? body) as T;
+  }
+
+  /**
+   * POST /account/withdraw — submit a signed withdrawal request.
+   */
+  async requestWithdrawal(envelope: PacificaRequestEnvelope): Promise<void> {
+    await this.postSigned('/account/withdraw', envelope);
   }
 
   // --- Internal ---
