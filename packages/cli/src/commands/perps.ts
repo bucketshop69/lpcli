@@ -3,6 +3,8 @@
  *
  * Usage:
  *   lpcli perps balance                                    Show Pacifica account balance
+ *   lpcli perps positions                                  List open positions with PnL
+ *   lpcli perps position <symbol>                          Detailed view of a position
  *   lpcli perps deposit <amount>  [--yes]                  Deposit USDC to Pacifica
  *   lpcli perps withdraw <amount> [--yes]                  Withdraw USDC from Pacifica
  *   lpcli perps trade <symbol> <long|short> <size> [--yes] Place a market order
@@ -187,6 +189,103 @@ async function runWithdraw(args: string[]): Promise<void> {
   await requestWithdrawal(wallet, amount, client);
   console.log(`Withdrawal of $${amount.toFixed(2)} USDC requested.`);
   console.log('Note: Pacifica processes withdrawals to your wallet. Check your balance shortly.\n');
+}
+
+async function showPositions(): Promise<void> {
+  const lpcli = new LPCLI();
+  const wallet = await lpcli.getWallet();
+  const address = wallet.getPublicKey().toBase58();
+  const client = new PacificaClient();
+
+  const [positions, prices] = await Promise.all([
+    client.getPositions(address),
+    client.getPrices(),
+  ]);
+
+  if (positions.length === 0) {
+    console.log('\nNo open positions.\n');
+    return;
+  }
+
+  const priceMap = new Map(prices.map((p) => [p.symbol, parseFloat(p.mark)]));
+
+  console.log(`\nOpen Positions (${positions.length}):`);
+  console.log('─'.repeat(70));
+
+  let totalPnl = 0;
+
+  for (const pos of positions) {
+    const side = pos.side === 'bid' ? 'LONG' : 'SHORT';
+    const size = parseFloat(pos.amount);
+    const entry = parseFloat(pos.entry_price);
+    const mark = priceMap.get(pos.symbol) ?? entry;
+    const direction = pos.side === 'bid' ? 1 : -1;
+    const pnl = (mark - entry) * size * direction;
+    const pnlPct = entry > 0 && size > 0 ? (pnl / (entry * size)) * 100 : 0;
+    totalPnl += pnl;
+
+    const pnlSign = pnl >= 0 ? '+' : '';
+    console.log(`  ${pos.symbol} ${side} ${size}`);
+    console.log(`    Entry: $${entry.toLocaleString()}  Mark: $${mark.toLocaleString()}`);
+    console.log(`    PnL: ${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`);
+  }
+
+  console.log('─'.repeat(70));
+  const totalSign = totalPnl >= 0 ? '+' : '';
+  console.log(`  Total PnL: ${totalSign}$${totalPnl.toFixed(2)}`);
+  console.log('');
+}
+
+async function showPosition(args: string[]): Promise<void> {
+  const symbol = args[0]?.toUpperCase();
+
+  if (!symbol) {
+    console.error('Usage: lpcli perps position <symbol>');
+    process.exit(1);
+  }
+
+  const lpcli = new LPCLI();
+  const wallet = await lpcli.getWallet();
+  const address = wallet.getPublicKey().toBase58();
+  const client = new PacificaClient();
+
+  const [positions, prices] = await Promise.all([
+    client.getPositions(address),
+    client.getPrices(),
+  ]);
+
+  const pos = positions.find((p) => p.symbol.toUpperCase() === symbol);
+  if (!pos) {
+    console.error(`No open position for ${symbol}.`);
+    const open = positions.map((p) => p.symbol);
+    if (open.length > 0) {
+      console.error(`Open positions: ${open.join(', ')}`);
+    }
+    process.exit(1);
+  }
+
+  const side = pos.side === 'bid' ? 'LONG' : 'SHORT';
+  const size = parseFloat(pos.amount);
+  const entry = parseFloat(pos.entry_price);
+  const priceInfo = prices.find((p) => p.symbol === pos.symbol);
+  const mark = priceInfo ? parseFloat(priceInfo.mark) : entry;
+  const direction = pos.side === 'bid' ? 1 : -1;
+  const pnl = (mark - entry) * size * direction;
+  const pnlPct = entry > 0 && size > 0 ? (pnl / (entry * size)) * 100 : 0;
+  const notional = mark * size;
+  const pnlSign = pnl >= 0 ? '+' : '';
+
+  console.log(`\n${pos.symbol} — ${side}`);
+  console.log('─'.repeat(40));
+  console.log(`  Size:        ${size} ${pos.symbol}`);
+  console.log(`  Entry Price: $${entry.toLocaleString()}`);
+  console.log(`  Mark Price:  $${mark.toLocaleString()}`);
+  console.log(`  Notional:    $${notional.toFixed(2)}`);
+  console.log(`  PnL:         ${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`);
+  console.log(`  Funding:     $${parseFloat(pos.funding).toFixed(4)}`);
+  console.log(`  Isolated:    ${pos.isolated ? 'Yes' : 'No (Cross)'}`);
+  console.log(`  Opened:      ${new Date(pos.created_at).toLocaleString()}`);
+  console.log('');
 }
 
 async function runTrade(args: string[]): Promise<void> {
@@ -384,6 +483,14 @@ export async function runPerps(args: string[]): Promise<void> {
         await runWithdraw(args.slice(1));
         break;
 
+      case 'positions':
+        await showPositions();
+        break;
+
+      case 'position':
+        await showPosition(args.slice(1));
+        break;
+
       case 'trade':
         await runTrade(args.slice(1));
         break;
@@ -403,12 +510,14 @@ export async function runPerps(args: string[]): Promise<void> {
 lpcli perps — Pacifica perpetuals
 
 Usage:
-  lpcli perps balance                        Show Pacifica account balance & margin
-  lpcli perps deposit <amount>               Deposit USDC to Pacifica
-  lpcli perps withdraw <amount>              Withdraw USDC from Pacifica
+  lpcli perps balance                             Show account balance & margin
+  lpcli perps positions                           List open positions with PnL
+  lpcli perps position <symbol>                   Detailed view of a position
+  lpcli perps deposit <amount>                    Deposit USDC to Pacifica
+  lpcli perps withdraw <amount>                   Withdraw USDC from Pacifica
   lpcli perps trade <symbol> <long|short> <size>  Place a market order
-  lpcli perps close <symbol>                 Close an open position
-  lpcli perps cancel                         Cancel all open orders
+  lpcli perps close <symbol>                      Close an open position
+  lpcli perps cancel                              Cancel all open orders
 
 Options:
   --yes                              Skip confirmation prompt
@@ -417,7 +526,7 @@ Options:
 
       default:
         console.error(`Unknown perps subcommand: ${subcommand}`);
-        console.error('Usage: lpcli perps [balance|deposit|withdraw|trade|close|cancel]');
+        console.error('Usage: lpcli perps [balance|positions|position|deposit|withdraw|trade|close|cancel]');
         process.exit(1);
     }
   } catch (err: unknown) {
