@@ -191,6 +191,107 @@ async function runWithdraw(args: string[]): Promise<void> {
   console.log('Note: Pacifica processes withdrawals to your wallet. Check your balance shortly.\n');
 }
 
+async function showMarkets(): Promise<void> {
+  const client = new PacificaClient();
+  const [markets, prices] = await Promise.all([
+    client.getMarkets(),
+    client.getPrices(),
+  ]);
+
+  const priceMap = new Map(prices.map((p) => [p.symbol, p]));
+
+  // Sort by 24h volume descending
+  const sorted = [...markets].sort((a, b) => {
+    const volA = parseFloat(priceMap.get(a.symbol)?.volume_24h ?? '0');
+    const volB = parseFloat(priceMap.get(b.symbol)?.volume_24h ?? '0');
+    return volB - volA;
+  });
+
+  console.log(`\nPacifica Markets (${sorted.length}):`);
+  console.log('─'.repeat(85));
+  console.log(
+    '  Symbol'.padEnd(12) +
+    'Mark Price'.padStart(14) +
+    'Funding'.padStart(10) +
+    'Vol 24h'.padStart(14) +
+    'OI'.padStart(14) +
+    'Leverage'.padStart(10) +
+    'Lot Size'.padStart(11)
+  );
+  console.log('─'.repeat(85));
+
+  for (const m of sorted) {
+    const p = priceMap.get(m.symbol);
+    const mark = p ? parseFloat(p.mark) : 0;
+    const funding = p ? parseFloat(p.funding) : 0;
+    const vol = p ? parseFloat(p.volume_24h) : 0;
+    const oi = p ? parseFloat(p.open_interest) : 0;
+
+    const fmtPrice = mark >= 1 ? `$${mark.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : `$${mark.toPrecision(4)}`;
+    const fmtFunding = `${(funding * 100).toFixed(4)}%`;
+    const fmtVol = vol >= 1e6 ? `$${(vol / 1e6).toFixed(1)}M` : vol >= 1e3 ? `$${(vol / 1e3).toFixed(1)}K` : `$${vol.toFixed(0)}`;
+    const fmtOi = oi >= 1e6 ? `$${(oi / 1e6).toFixed(1)}M` : oi >= 1e3 ? `$${(oi / 1e3).toFixed(1)}K` : `$${oi.toFixed(0)}`;
+
+    console.log(
+      `  ${m.symbol.padEnd(10)}` +
+      `${fmtPrice.padStart(14)}` +
+      `${fmtFunding.padStart(10)}` +
+      `${fmtVol.padStart(14)}` +
+      `${fmtOi.padStart(14)}` +
+      `${(m.max_leverage + 'x').padStart(10)}` +
+      `${m.lot_size.padStart(11)}`
+    );
+  }
+  console.log('');
+}
+
+async function showMarket(args: string[]): Promise<void> {
+  const symbol = args[0]?.toUpperCase();
+
+  if (!symbol) {
+    console.error('Usage: lpcli perps market <symbol>');
+    process.exit(1);
+  }
+
+  const client = new PacificaClient();
+  const [markets, prices] = await Promise.all([
+    client.getMarkets(),
+    client.getPrices(),
+  ]);
+
+  const market = markets.find((m) => m.symbol.toUpperCase() === symbol);
+  if (!market) {
+    const available = markets.map((m) => m.symbol).join(', ');
+    console.error(`Unknown symbol: ${symbol}. Available: ${available}`);
+    process.exit(1);
+  }
+
+  const p = prices.find((pr) => pr.symbol === market.symbol);
+  const mark = p ? parseFloat(p.mark) : 0;
+  const oracle = p ? parseFloat(p.oracle) : 0;
+  const mid = p ? parseFloat(p.mid) : 0;
+  const funding = p ? parseFloat(p.funding) : 0;
+  const vol = p ? parseFloat(p.volume_24h) : 0;
+  const oi = p ? parseFloat(p.open_interest) : 0;
+
+  console.log(`\n${market.symbol}`);
+  console.log('─'.repeat(40));
+  console.log(`  Mark Price:     $${mark.toLocaleString()}`);
+  console.log(`  Oracle Price:   $${oracle.toLocaleString()}`);
+  console.log(`  Mid Price:      $${mid.toLocaleString()}`);
+  console.log(`  Funding Rate:   ${(funding * 100).toFixed(4)}%`);
+  console.log(`  Volume 24h:     $${vol.toLocaleString()}`);
+  console.log(`  Open Interest:  $${oi.toLocaleString()}`);
+  console.log('─'.repeat(40));
+  console.log(`  Max Leverage:   ${market.max_leverage}x`);
+  console.log(`  Lot Size:       ${market.lot_size}`);
+  console.log(`  Tick Size:      ${market.tick_size}`);
+  console.log(`  Min Order:      ${market.min_order_size}`);
+  console.log(`  Max Order:      ${market.max_order_size}`);
+  console.log(`  Isolated Only:  ${market.isolated_only ? 'Yes' : 'No'}`);
+  console.log('');
+}
+
 async function showPositions(): Promise<void> {
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
@@ -483,6 +584,14 @@ export async function runPerps(args: string[]): Promise<void> {
         await runWithdraw(args.slice(1));
         break;
 
+      case 'markets':
+        await showMarkets();
+        break;
+
+      case 'market':
+        await showMarket(args.slice(1));
+        break;
+
       case 'positions':
         await showPositions();
         break;
@@ -513,6 +622,8 @@ Usage:
   lpcli perps balance                             Show account balance & margin
   lpcli perps positions                           List open positions with PnL
   lpcli perps position <symbol>                   Detailed view of a position
+  lpcli perps markets                             List all available markets
+  lpcli perps market <symbol>                     Detailed view of a market
   lpcli perps deposit <amount>                    Deposit USDC to Pacifica
   lpcli perps withdraw <amount>                   Withdraw USDC from Pacifica
   lpcli perps trade <symbol> <long|short> <size>  Place a market order
@@ -526,7 +637,7 @@ Options:
 
       default:
         console.error(`Unknown perps subcommand: ${subcommand}`);
-        console.error('Usage: lpcli perps [balance|positions|position|deposit|withdraw|trade|close|cancel]');
+        console.error('Usage: lpcli perps [balance|positions|position|markets|market|deposit|withdraw|trade|close|cancel]');
         process.exit(1);
     }
   } catch (err: unknown) {
