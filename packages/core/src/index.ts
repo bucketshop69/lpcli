@@ -87,9 +87,10 @@ export {
 export { requestWithdrawal } from './pacifica-withdraw.js';
 
 // Pacifica — trade execution (signed REST requests)
-export type { MarketOrderParams, MarketOrderResult } from './pacifica-trade.js';
+export type { MarketOrderParams, LimitOrderParams, MarketOrderResult } from './pacifica-trade.js';
 export {
   createMarketOrder,
+  createLimitOrder,
   cancelOrder,
   cancelAllOrders,
   closePosition,

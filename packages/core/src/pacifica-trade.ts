@@ -29,6 +29,21 @@ export interface MarketOrderParams {
   clientOrderId?: string;
 }
 
+export interface LimitOrderParams {
+  symbol: string;
+  /** 'bid' = long, 'ask' = short */
+  side: 'bid' | 'ask';
+  /** Size in asset units. Will be rounded to lot_size. */
+  amount: number;
+  /** Limit price. */
+  price: number;
+  /** Time-in-force: GTC (default), IOC, FOK, POST_ONLY. */
+  tif?: 'GTC' | 'IOC' | 'FOK' | 'POST_ONLY';
+  /** If true, only reduces an existing position. */
+  reduceOnly?: boolean;
+  clientOrderId?: string;
+}
+
 export interface MarketOrderResult {
   orderId: number;
 }
@@ -115,6 +130,50 @@ export async function createMarketOrder(
 
   const envelope = await signPacificaRequest(wallet, header, payload);
   const result = await c.postSigned<{ order_id: number }>('/orders/create_market', envelope);
+
+  return { orderId: result.order_id };
+}
+
+// ============================================================================
+// Limit order
+// ============================================================================
+
+/**
+ * Place a limit order on Pacifica (server-side, price-triggered).
+ */
+export async function createLimitOrder(
+  wallet: WalletService,
+  params: LimitOrderParams,
+  client?: PacificaClient,
+): Promise<MarketOrderResult> {
+  const c = client ?? new PacificaClient();
+
+  const market = await validateOrder(params.symbol, params.amount, c);
+  const roundedAmount = roundToLotSize(params.amount, market);
+  if (roundedAmount <= 0) {
+    throw new Error(
+      `Amount ${params.amount} rounds to 0 at lot size ${market.lot_size} for ${market.symbol}`,
+    );
+  }
+
+  const payload: Record<string, unknown> = {
+    symbol: market.symbol,
+    side: params.side,
+    amount: roundedAmount.toString(),
+    price: params.price.toString(),
+    tif: params.tif ?? 'GTC',
+    reduce_only: params.reduceOnly ?? false,
+    client_order_id: params.clientOrderId ?? randomUUID(),
+  };
+
+  const header = {
+    type: 'create_order',
+    timestamp: Date.now(),
+    expiry_window: 5000,
+  };
+
+  const envelope = await signPacificaRequest(wallet, header, payload);
+  const result = await c.postSigned<{ order_id: number }>('/orders/create', envelope);
 
   return { orderId: result.order_id };
 }

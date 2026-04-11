@@ -19,6 +19,7 @@ import {
   buildDepositTransaction,
   requestWithdrawal,
   createMarketOrder,
+  createLimitOrder,
   cancelAllOrders,
   closePosition,
   roundToLotSize,
@@ -679,6 +680,212 @@ async function runTakeProfit(args: string[]): Promise<void> {
   console.log('');
 }
 
+// ---------------------------------------------------------------------------
+// Limit / conditional orders
+// ---------------------------------------------------------------------------
+
+function parseRsiCondition(raw: string): { op: '>' | '<'; value: number } | null {
+  const match = raw.match(/^([><])(\d+(?:\.\d+)?)$/);
+  if (!match) return null;
+  return { op: match[1] as '>' | '<', value: parseFloat(match[2]) };
+}
+
+async function runLimit(args: string[]): Promise<void> {
+  const symbol = args[0]?.toUpperCase();
+  const direction = args[1]?.toLowerCase(); // long, short, or close
+  const sizeRaw = args[2];
+  const autoConfirm = hasFlag(args, '--yes');
+
+  // Parse flags
+  const priceIdx = args.indexOf('--price');
+  const rsiIdx = args.indexOf('--rsi');
+  const tfIdx = args.indexOf('--tf');
+
+  const priceVal = priceIdx >= 0 ? args[priceIdx + 1] : undefined;
+  const rsiVal = rsiIdx >= 0 ? args[rsiIdx + 1] : undefined;
+  const tfVal = (tfIdx >= 0 ? args[tfIdx + 1] : '15m') as PacificaKlineInterval;
+
+  if (!symbol || !direction) {
+    console.error(`Usage:
+  lpcli perps limit <symbol> <long|short> <size> --price <price>
+  lpcli perps limit <symbol> <long|short> <size> --rsi "<op><value>" [--tf <timeframe>]
+  lpcli perps limit <symbol> close --price <price>
+  lpcli perps limit <symbol> close --rsi "<op><value>" [--tf <timeframe>]
+
+Examples:
+  lpcli perps limit SOL long 0.1 --price 80        Price-based limit (server-side)
+  lpcli perps limit SOL long 0.1 --rsi ">55" --tf 15m   RSI-triggered (client-side)
+  lpcli perps limit SOL close --rsi "<45" --tf 1h   Close position when RSI drops`);
+    process.exit(1);
+  }
+
+  if (!['long', 'short', 'close'].includes(direction)) {
+    console.error('Direction must be "long", "short", or "close".');
+    process.exit(1);
+  }
+
+  if (!priceVal && !rsiVal) {
+    console.error('Must specify --price or --rsi.');
+    process.exit(1);
+  }
+
+  if (priceVal && rsiVal) {
+    console.error('Cannot use both --price and --rsi. Pick one trigger type.');
+    process.exit(1);
+  }
+
+  const lpcli = new LPCLI();
+  const wallet = await lpcli.getWallet();
+  const client = new PacificaClient();
+
+  // --- CLOSE mode: determine side and size from position ---
+  let side: 'bid' | 'ask';
+  let size: number;
+  let reduceOnly = false;
+
+  if (direction === 'close') {
+    const address = wallet.getPublicKey().toBase58();
+    const positions = await client.getPositions(address);
+    const pos = positions.find((p) => p.symbol.toUpperCase() === symbol);
+    if (!pos) {
+      console.error(`No open position for ${symbol}.`);
+      process.exit(1);
+    }
+    side = pos.side === 'bid' ? 'ask' : 'bid';
+    size = parseFloat(pos.amount);
+    reduceOnly = true;
+    console.log(`\nClosing ${pos.side === 'bid' ? 'LONG' : 'SHORT'} ${size} ${symbol}`);
+  } else {
+    if (!sizeRaw) {
+      console.error('Size is required for long/short orders.');
+      process.exit(1);
+    }
+    size = parseFloat(sizeRaw);
+    if (isNaN(size) || size <= 0) {
+      console.error('Size must be a positive number.');
+      process.exit(1);
+    }
+    side = direction === 'long' ? 'bid' : 'ask';
+  }
+
+  // ===================== PRICE-BASED LIMIT =====================
+  if (priceVal) {
+    const price = parseFloat(priceVal);
+    if (isNaN(price) || price <= 0) {
+      console.error('Price must be a positive number.');
+      process.exit(1);
+    }
+
+    const dirLabel = direction === 'close' ? 'CLOSE' : direction.toUpperCase();
+    console.log(`\nLimit Order (price-based, server-side):`);
+    console.log(`  Symbol:    ${symbol}`);
+    console.log(`  Direction: ${dirLabel}`);
+    console.log(`  Size:      ${size}`);
+    console.log(`  Price:     $${price.toLocaleString()}`);
+    console.log('');
+
+    if (!autoConfirm) {
+      const confirm = await ask('Confirm limit order? [y/N] ');
+      if (confirm.toLowerCase() !== 'y') {
+        console.log('Aborted.');
+        process.exit(0);
+      }
+    }
+
+    const result = await createLimitOrder(wallet, {
+      symbol,
+      side,
+      amount: size,
+      price,
+      reduceOnly,
+    }, client);
+
+    console.log(`Limit order placed! ID: ${result.orderId}`);
+    console.log('');
+    return;
+  }
+
+  // ===================== RSI-BASED CONDITIONAL =====================
+  const cond = parseRsiCondition(rsiVal!);
+  if (!cond) {
+    console.error('Invalid RSI condition. Use format: ">55" or "<40"');
+    process.exit(1);
+  }
+
+  if (!PACIFICA_KLINE_INTERVALS.includes(tfVal)) {
+    console.error(`Invalid timeframe. Valid: ${PACIFICA_KLINE_INTERVALS.join(', ')}`);
+    process.exit(1);
+  }
+
+  const dirLabel = direction === 'close' ? 'CLOSE' : direction.toUpperCase();
+  console.log(`\nConditional Order (RSI-triggered, client-side):`);
+  console.log(`  Symbol:    ${symbol}`);
+  console.log(`  Direction: ${dirLabel}`);
+  console.log(`  Size:      ${size}`);
+  console.log(`  Trigger:   RSI ${cond.op} ${cond.value} on ${tfVal}`);
+  console.log(`  Watching...  (Ctrl+C to cancel)\n`);
+
+  // Interval in ms for each timeframe
+  const intervalMs: Record<string, number> = {
+    '1m': 60_000, '5m': 300_000, '15m': 900_000, '30m': 1_800_000,
+    '1h': 3_600_000, '2h': 7_200_000, '4h': 14_400_000,
+    '8h': 28_800_000, '12h': 43_200_000, '1d': 86_400_000,
+  };
+  const pollMs = Math.min(intervalMs[tfVal] ?? 900_000, 60_000); // poll at most every 60s
+
+  const checkAndExecute = async (): Promise<boolean> => {
+    try {
+      const result = await fetchRSI(symbol, tfVal);
+      const triggered =
+        (cond.op === '>' && result.rsi > cond.value) ||
+        (cond.op === '<' && result.rsi < cond.value);
+
+      const now = new Date().toLocaleTimeString();
+      const status = triggered ? '>>> TRIGGERED <<<' : 'watching';
+      console.log(`  [${now}] ${symbol} ${tfVal} RSI: ${result.rsi.toFixed(1)} (${result.zone}) — ${status}`);
+
+      if (triggered) {
+        console.log(`\n  Condition met! Executing market order...`);
+
+        const orderResult = await createMarketOrder(wallet, {
+          symbol,
+          side,
+          amount: size,
+          slippagePercent: 1,
+          reduceOnly,
+        }, client);
+
+        console.log(`  Order placed! ID: ${orderResult.orderId}`);
+        console.log(`  ${dirLabel} ${size} ${symbol}\n`);
+        return true;
+      }
+    } catch (err: unknown) {
+      console.error(`  [${new Date().toLocaleTimeString()}] Error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return false;
+  };
+
+  // Initial check
+  if (await checkAndExecute()) return;
+
+  // Polling loop
+  await new Promise<void>((resolve) => {
+    const timer = setInterval(async () => {
+      if (await checkAndExecute()) {
+        clearInterval(timer);
+        resolve();
+      }
+    }, pollMs);
+
+    // Handle Ctrl+C gracefully
+    process.on('SIGINT', () => {
+      clearInterval(timer);
+      console.log('\n  Cancelled. No order placed.\n');
+      process.exit(0);
+    });
+  });
+}
+
 async function showRSI(args: string[]): Promise<void> {
   const symbol = args[0]?.toUpperCase();
   const interval = (args[1] ?? '15m') as PacificaKlineInterval;
@@ -758,6 +965,10 @@ export async function runPerps(args: string[]): Promise<void> {
         await runCancel(args.slice(1));
         break;
 
+      case 'limit':
+        await runLimit(args.slice(1));
+        break;
+
       case 'rsi':
         await showRSI(args.slice(1));
         break;
@@ -787,6 +998,8 @@ Usage:
   lpcli perps trade <symbol> <long|short> <size>  Place a market order
   lpcli perps close <symbol>                      Close an open position
   lpcli perps cancel                              Cancel all open orders
+  lpcli perps limit <symbol> <long|short|close> [size] --price <p>    Limit order (server-side)
+  lpcli perps limit <symbol> <long|short|close> [size] --rsi "<cond>" [--tf <tf>]  RSI conditional
   lpcli perps rsi <symbol> [timeframe]             RSI indicator (default 15m)
   lpcli perps sl <symbol> <price>                 Set stop-loss on a position
   lpcli perps tp <symbol> <price>                 Set take-profit on a position
