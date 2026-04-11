@@ -95,5 +95,9 @@ export {
   validateOrder,
 } from './pacifica-trade.js';
 
+// Pacifica — TP/SL (signed REST requests)
+export type { TPSLParams } from './pacifica-tpsl.js';
+export { setPositionTPSL } from './pacifica-tpsl.js';
+
 // LPCLI
 export { LPCLI } from './lpcli.js';

@@ -22,6 +22,7 @@ import {
   cancelAllOrders,
   closePosition,
   roundToLotSize,
+  setPositionTPSL,
   PACIFICA_MIN_DEPOSIT_USDC,
 } from '@lpcli/core';
 
@@ -563,6 +564,116 @@ async function runCancel(args: string[]): Promise<void> {
   console.log('');
 }
 
+async function runStopLoss(args: string[]): Promise<void> {
+  const symbol = args[0]?.toUpperCase();
+  const priceRaw = args[1];
+  const autoConfirm = hasFlag(args, '--yes');
+
+  if (!symbol || !priceRaw) {
+    console.error('Usage: lpcli perps sl <symbol> <price> [--yes]');
+    console.error('  Sets a stop-loss at the given price for your position.');
+    process.exit(1);
+  }
+
+  const price = parseFloat(priceRaw);
+  if (isNaN(price) || price <= 0) {
+    console.error('Price must be a positive number.');
+    process.exit(1);
+  }
+
+  const lpcli = new LPCLI();
+  const wallet = await lpcli.getWallet();
+  const client = new PacificaClient();
+  const address = wallet.getPublicKey().toBase58();
+
+  const positions = await client.getPositions(address);
+  const pos = positions.find((p) => p.symbol.toUpperCase() === symbol);
+  if (!pos) {
+    console.error(`No open position for ${symbol}.`);
+    process.exit(1);
+  }
+
+  const side = pos.side === 'bid' ? 'LONG' : 'SHORT';
+  const entry = parseFloat(pos.entry_price);
+
+  console.log(`\nSet Stop-Loss:`);
+  console.log(`  Symbol:   ${pos.symbol} ${side}`);
+  console.log(`  Entry:    $${entry.toLocaleString()}`);
+  console.log(`  SL Price: $${price.toLocaleString()}`);
+  console.log('');
+
+  if (!autoConfirm) {
+    const confirm = await ask('Confirm stop-loss? [y/N] ');
+    if (confirm.toLowerCase() !== 'y') {
+      console.log('Aborted.');
+      process.exit(0);
+    }
+  }
+
+  await setPositionTPSL(wallet, {
+    symbol: pos.symbol,
+    stopLoss: { stopPrice: price.toString() },
+  }, client);
+
+  console.log(`Stop-loss set at $${price.toLocaleString()} for ${pos.symbol}.`);
+  console.log('');
+}
+
+async function runTakeProfit(args: string[]): Promise<void> {
+  const symbol = args[0]?.toUpperCase();
+  const priceRaw = args[1];
+  const autoConfirm = hasFlag(args, '--yes');
+
+  if (!symbol || !priceRaw) {
+    console.error('Usage: lpcli perps tp <symbol> <price> [--yes]');
+    console.error('  Sets a take-profit at the given price for your position.');
+    process.exit(1);
+  }
+
+  const price = parseFloat(priceRaw);
+  if (isNaN(price) || price <= 0) {
+    console.error('Price must be a positive number.');
+    process.exit(1);
+  }
+
+  const lpcli = new LPCLI();
+  const wallet = await lpcli.getWallet();
+  const client = new PacificaClient();
+  const address = wallet.getPublicKey().toBase58();
+
+  const positions = await client.getPositions(address);
+  const pos = positions.find((p) => p.symbol.toUpperCase() === symbol);
+  if (!pos) {
+    console.error(`No open position for ${symbol}.`);
+    process.exit(1);
+  }
+
+  const side = pos.side === 'bid' ? 'LONG' : 'SHORT';
+  const entry = parseFloat(pos.entry_price);
+
+  console.log(`\nSet Take-Profit:`);
+  console.log(`  Symbol:   ${pos.symbol} ${side}`);
+  console.log(`  Entry:    $${entry.toLocaleString()}`);
+  console.log(`  TP Price: $${price.toLocaleString()}`);
+  console.log('');
+
+  if (!autoConfirm) {
+    const confirm = await ask('Confirm take-profit? [y/N] ');
+    if (confirm.toLowerCase() !== 'y') {
+      console.log('Aborted.');
+      process.exit(0);
+    }
+  }
+
+  await setPositionTPSL(wallet, {
+    symbol: pos.symbol,
+    takeProfit: { stopPrice: price.toString() },
+  }, client);
+
+  console.log(`Take-profit set at $${price.toLocaleString()} for ${pos.symbol}.`);
+  console.log('');
+}
+
 // ---------------------------------------------------------------------------
 // Entrypoint
 // ---------------------------------------------------------------------------
@@ -612,6 +723,14 @@ export async function runPerps(args: string[]): Promise<void> {
         await runCancel(args.slice(1));
         break;
 
+      case 'sl':
+        await runStopLoss(args.slice(1));
+        break;
+
+      case 'tp':
+        await runTakeProfit(args.slice(1));
+        break;
+
       case undefined:
       case '--help':
       case '-h':
@@ -629,6 +748,8 @@ Usage:
   lpcli perps trade <symbol> <long|short> <size>  Place a market order
   lpcli perps close <symbol>                      Close an open position
   lpcli perps cancel                              Cancel all open orders
+  lpcli perps sl <symbol> <price>                 Set stop-loss on a position
+  lpcli perps tp <symbol> <price>                 Set take-profit on a position
 
 Options:
   --yes                              Skip confirmation prompt
@@ -637,7 +758,7 @@ Options:
 
       default:
         console.error(`Unknown perps subcommand: ${subcommand}`);
-        console.error('Usage: lpcli perps [balance|positions|position|markets|market|deposit|withdraw|trade|close|cancel]');
+        console.error('Usage: lpcli perps [balance|positions|position|markets|market|deposit|withdraw|trade|close|cancel|sl|tp]');
         process.exit(1);
     }
   } catch (err: unknown) {
