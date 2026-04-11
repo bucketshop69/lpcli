@@ -80,6 +80,22 @@ export interface PacificaOrder {
   created_at: number;
 }
 
+export interface PacificaKline {
+  t: number;   // open time ms
+  T: number;   // close time ms
+  s: string;   // symbol
+  i: string;   // interval
+  o: string;   // open
+  h: string;   // high
+  l: string;   // low
+  c: string;   // close
+  v: string;   // volume
+  n: number;   // trade count
+}
+
+export const PACIFICA_KLINE_INTERVALS = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d'] as const;
+export type PacificaKlineInterval = typeof PACIFICA_KLINE_INTERVALS[number];
+
 // ============================================================================
 // Errors
 // ============================================================================
@@ -118,6 +134,11 @@ export class PacificaClient {
   /** GET /positions?account=<address> — open positions. */
   async getPositions(address: string): Promise<PacificaPosition[]> {
     return this.get<PacificaPosition[]>(`/positions?account=${address}`);
+  }
+
+  /** GET /kline — candlestick data. */
+  async getKlines(symbol: string, interval: PacificaKlineInterval, startTime: number): Promise<PacificaKline[]> {
+    return this.get<PacificaKline[]>(`/kline?symbol=${symbol}&interval=${interval}&start_time=${startTime}`);
   }
 
   /** GET /orders?account=<address> — open orders. */

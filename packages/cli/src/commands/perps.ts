@@ -23,8 +23,11 @@ import {
   closePosition,
   roundToLotSize,
   setPositionTPSL,
+  fetchRSI,
   PACIFICA_MIN_DEPOSIT_USDC,
+  PACIFICA_KLINE_INTERVALS,
 } from '@lpcli/core';
+import type { PacificaKlineInterval } from '@lpcli/core';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -208,7 +211,9 @@ async function showMarkets(): Promise<void> {
     return volB - volA;
   });
 
-  console.log(`\nPacifica Markets (${sorted.length}):`);
+  const top = sorted.slice(0, 10);
+
+  console.log(`\nPacifica Markets (top ${top.length} by volume):`);
   console.log('─'.repeat(85));
   console.log(
     '  Symbol'.padEnd(12) +
@@ -221,7 +226,7 @@ async function showMarkets(): Promise<void> {
   );
   console.log('─'.repeat(85));
 
-  for (const m of sorted) {
+  for (const m of top) {
     const p = priceMap.get(m.symbol);
     const mark = p ? parseFloat(p.mark) : 0;
     const funding = p ? parseFloat(p.funding) : 0;
@@ -674,6 +679,36 @@ async function runTakeProfit(args: string[]): Promise<void> {
   console.log('');
 }
 
+async function showRSI(args: string[]): Promise<void> {
+  const symbol = args[0]?.toUpperCase();
+  const interval = (args[1] ?? '15m') as PacificaKlineInterval;
+
+  if (!symbol) {
+    console.error('Usage: lpcli perps rsi <symbol> [timeframe]');
+    console.error(`  timeframes: ${PACIFICA_KLINE_INTERVALS.join(', ')} (default: 15m)`);
+    process.exit(1);
+  }
+
+  if (!PACIFICA_KLINE_INTERVALS.includes(interval)) {
+    console.error(`Invalid timeframe: ${interval}`);
+    console.error(`  Valid: ${PACIFICA_KLINE_INTERVALS.join(', ')}`);
+    process.exit(1);
+  }
+
+  const result = await fetchRSI(symbol, interval);
+
+  const zoneLabel =
+    result.zone === 'overbought' ? 'OVERBOUGHT (>60)' :
+    result.zone === 'oversold' ? 'OVERSOLD (<40)' :
+    'NEUTRAL';
+
+  console.log(`\n${result.symbol} ${result.interval} RSI: ${result.rsi.toFixed(1)}`);
+  console.log(`  Zone:   ${zoneLabel}`);
+  console.log(`  Price:  $${result.price.toLocaleString()}`);
+  console.log(`  Candles: ${result.candleCount}`);
+  console.log('');
+}
+
 // ---------------------------------------------------------------------------
 // Entrypoint
 // ---------------------------------------------------------------------------
@@ -723,6 +758,10 @@ export async function runPerps(args: string[]): Promise<void> {
         await runCancel(args.slice(1));
         break;
 
+      case 'rsi':
+        await showRSI(args.slice(1));
+        break;
+
       case 'sl':
         await runStopLoss(args.slice(1));
         break;
@@ -748,6 +787,7 @@ Usage:
   lpcli perps trade <symbol> <long|short> <size>  Place a market order
   lpcli perps close <symbol>                      Close an open position
   lpcli perps cancel                              Cancel all open orders
+  lpcli perps rsi <symbol> [timeframe]             RSI indicator (default 15m)
   lpcli perps sl <symbol> <price>                 Set stop-loss on a position
   lpcli perps tp <symbol> <price>                 Set take-profit on a position
 

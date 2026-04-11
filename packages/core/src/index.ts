@@ -66,8 +66,10 @@ export type {
   PacificaAccountInfo,
   PacificaPosition,
   PacificaOrder,
+  PacificaKline,
+  PacificaKlineInterval,
 } from './pacifica-client.js';
-export { PacificaClient, PacificaApiError, PACIFICA_REST_URL } from './pacifica-client.js';
+export { PacificaClient, PacificaApiError, PACIFICA_REST_URL, PACIFICA_KLINE_INTERVALS } from './pacifica-client.js';
 
 // Pacifica — deposit (on-chain instruction, unsigned)
 export {
@@ -94,6 +96,10 @@ export {
   roundToLotSize,
   validateOrder,
 } from './pacifica-trade.js';
+
+// Pacifica — indicators (read-only)
+export type { RSIResult } from './pacifica-indicators.js';
+export { calculateRSI, fetchRSI } from './pacifica-indicators.js';
 
 // Pacifica — TP/SL (signed REST requests)
 export type { TPSLParams } from './pacifica-tpsl.js';
