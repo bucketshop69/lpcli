@@ -17,6 +17,7 @@ import { createInterface } from 'node:readline';
 import { existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
+import { DEFAULT_FEE_RESERVE_SOL } from '@lpcli/core';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -196,7 +197,7 @@ async function runNonInteractive(args: string[]): Promise<void> {
   const address = ensureOWSWallet();
   const fundingToken = resolveFundingToken(fundingSymbol);
 
-  const config = { wallet: WALLET_NAME, cluster, fundingToken, feeReserveSol: 0.02 };
+  const config = { wallet: WALLET_NAME, cluster, fundingToken, feeReserveSol: DEFAULT_FEE_RESERVE_SOL };
   saveConfig(configPath, config);
 
   // RPC URL always goes to .env (keeps API keys out of config.json)
@@ -255,7 +256,7 @@ When you close, it swaps back. Choose one:
     wallet: WALLET_NAME,
     cluster: 'mainnet' as const,
     fundingToken,
-    feeReserveSol: 0.02,
+    feeReserveSol: DEFAULT_FEE_RESERVE_SOL,
   };
 
   if (existsSync(configPath)) {

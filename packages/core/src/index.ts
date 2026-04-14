@@ -4,7 +4,7 @@
 
 // Config
 export type { LPCLIConfig, FundingToken } from './config.js';
-export { loadConfig, SOL_MINT, LAMPORTS_PER_SOL, POSITION_RENT_LAMPORTS, feeReserveLamports } from './config.js';
+export { loadConfig, SOL_MINT, LAMPORTS_PER_SOL, POSITION_RENT_LAMPORTS, DEFAULT_FEE_RESERVE_SOL, feeReserveLamports } from './config.js';
 
 // Types
 export type {
@@ -40,6 +40,10 @@ export { MeteoraClient } from './client.js';
 export type { TokenBalance, WalletBalances, TransferResult } from './wallet.js';
 export { WalletService } from './wallet.js';
 
+// EVM Wallet
+export type { EvmSignResult, EvmSendResult } from './evm-wallet.js';
+export { EvmWalletService } from './evm-wallet.js';
+
 // DLMM
 export { DLMMService } from './dlmm.js';
 
@@ -54,6 +58,78 @@ export type { LiquiditySplit } from './funding.js';
 // Token Registry
 export type { TokenInfo } from './tokens.js';
 export { TokenRegistry } from './tokens.js';
+
+// Pacifica — signing
+export type { PacificaSignatureHeader, PacificaRequestEnvelope } from './pacifica.js';
+export { preparePacificaMessage, signPacificaRequest } from './pacifica.js';
+
+// Pacifica — REST client
+export type {
+  PacificaMarketInfo,
+  PacificaPriceInfo,
+  PacificaAccountInfo,
+  PacificaPosition,
+  PacificaOrder,
+  PacificaKline,
+  PacificaKlineInterval,
+} from './pacifica-client.js';
+export { PacificaClient, PacificaApiError, PACIFICA_REST_URL, PACIFICA_KLINE_INTERVALS } from './pacifica-client.js';
+
+// Pacifica — deposit (on-chain instruction, unsigned)
+export {
+  createDepositInstruction,
+  buildDepositTransaction,
+  PACIFICA_PROGRAM_ID,
+  PACIFICA_VAULT_PDA,
+  PACIFICA_VAULT_USDC_ATA,
+  PACIFICA_EVENT_AUTHORITY,
+  PACIFICA_USDC_MINT,
+  PACIFICA_MIN_DEPOSIT_USDC,
+} from './pacifica-deposit.js';
+
+// Pacifica — withdraw (signed REST request)
+export { requestWithdrawal } from './pacifica-withdraw.js';
+
+// Pacifica — trade execution (signed REST requests)
+export type { MarketOrderParams, LimitOrderParams, MarketOrderResult } from './pacifica-trade.js';
+export {
+  createMarketOrder,
+  createLimitOrder,
+  cancelOrder,
+  cancelStopOrder,
+  cancelAllOrders,
+  closePosition,
+  roundToLotSize,
+  validateOrder,
+} from './pacifica-trade.js';
+
+// Pacifica — indicators (read-only)
+export type { RSIResult } from './pacifica-indicators.js';
+export { calculateRSI, fetchRSI } from './pacifica-indicators.js';
+
+// Pacifica — TP/SL (signed REST requests)
+export type { TPSLParams } from './pacifica-tpsl.js';
+export { setPositionTPSL } from './pacifica-tpsl.js';
+
+// Polymarket — auth (VPS relay)
+export type { PolymarketAuthResult, PolymarketRelayConfig } from './polymarket-auth.js';
+export { polymarketAuth, getDeriveMessage } from './polymarket-auth.js';
+
+// Polymarket — deposit addresses (Bridge API)
+export type { PolymarketDepositAddresses } from './polymarket-deposit.js';
+export { getDepositAddresses, getDepositAddressesDirect } from './polymarket-deposit.js';
+
+// Polymarket — allowance & approval
+export type { AllowanceStatus, PolymarketAllowances, ApprovalResult } from './polymarket-approve.js';
+export { checkAllowances, approveViaRelay, POLYMARKET_SPENDERS } from './polymarket-approve.js';
+
+// Polymarket — order placement
+export type { PolymarketOrderParams, PolymarketOrderResult, PolymarketCancelResult } from './polymarket-order.js';
+export { placeOrder, getOpenOrders, cancelOrder as cancelPolymarketOrder, cancelAllOrders as cancelAllPolymarketOrders } from './polymarket-order.js';
+
+// Polymarket — positions & balance
+export type { PolymarketBalance, PolymarketPosition } from './polymarket-positions.js';
+export { getBalance as getPolymarketBalance, getPositions } from './polymarket-positions.js';
 
 // LPCLI
 export { LPCLI } from './lpcli.js';

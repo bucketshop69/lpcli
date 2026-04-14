@@ -64,6 +64,7 @@ interface OWSSignResult {
 interface OWSSdk {
   getWallet(nameOrId: string): { id: string; name: string; accounts: { chainId: string; address: string }[] };
   signTransaction(wallet: string, chain: string, txHex: string): OWSSignResult;
+  signMessage(wallet: string, chain: string, message: string): OWSSignResult;
 }
 
 let _ows: OWSSdk | null = null;
@@ -160,6 +161,17 @@ export class WalletService {
     const sigBytes = Buffer.from(result.signature, 'hex');
     tx.addSignature(this._publicKey, sigBytes);
     return tx;
+  }
+
+  /**
+   * Sign an arbitrary message via OWS.
+   * Returns the raw 64-byte ed25519 signature.
+   */
+  async signMessage(message: Uint8Array): Promise<Uint8Array> {
+    const ows = await getOWS();
+    const messageStr = new TextDecoder().decode(message);
+    const result = ows.signMessage(this.walletName, 'solana', messageStr);
+    return new Uint8Array(Buffer.from(result.signature, 'hex'));
   }
 
   /** Return the underlying Connection (for token account lookups, etc.) */

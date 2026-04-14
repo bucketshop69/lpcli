@@ -1,44 +1,91 @@
 # LPCLI
 
-Manage Meteora DLMM liquidity positions from your terminal, Telegram, or an autonomous AI agent — using the same tools.
+Agentic DeFi platform for Solana — Meteora DLMM liquidity, Pacifica perpetuals, Jupiter swaps, and a conversational AI agent. Terminal, MCP, and ElizaOS interfaces sharing one SDK.
 
-Built on top of [Open Wallet Standard](https://github.com/open-wallet-standard/core). Private keys never leave your machine.
-
----
-
-## Why
-
-Managing DLMM positions today means clicking through Meteora's web UI for every operation — finding pools manually, opening positions one at a time, checking P&L by navigating back to the dashboard. It doesn't scale to 10 positions. It can't be automated. It can't be used by an AI agent.
-
-LPCLI wraps every LP operation into callable tools that work from a terminal command, a Telegram message, or a programmatic SDK call. Same operations, three interfaces.
+Built on [Open Wallet Standard](https://github.com/open-wallet-standard/core). Private keys never leave your machine.
 
 ---
 
 ## Quick start
 
 ```bash
-npm install -g lpcli
-lpcli init
-lpcli discover SOL-USDC
+git clone https://github.com/bucketshop69/lpcli.git
+cd lpcli
+pnpm install
+pnpm build
 ```
 
-```
-┌─────────────┬──────────┬─────────┬───────┐
-│ Pool        │ Fee APR  │ TVL     │ Score │
-├─────────────┼──────────┼─────────┼───────┤
-│ SOL-USDC #1 │ 182%     │ $2.4M   │ 92    │
-│ SOL-USDC #2 │ 156%     │ $1.8M   │ 87    │
-│ SOL-USDC #3 │ 94%      │ $3.1M   │ 85    │
-└─────────────┴──────────┴─────────┴───────┘
-```
+Create a wallet and configure:
 
 ```bash
-lpcli open <pool_address> --amount 5 --strategy spot
-lpcli positions
-lpcli close <position_address>
+node packages/cli/dist/index.js init
 ```
 
-From install to first LP position in under 2 minutes. No browser, no web app.
+Start using:
+
+```bash
+# Discover pools
+node packages/cli/dist/index.js discover SOL
+
+# Check perps markets
+node packages/cli/dist/index.js perps markets
+
+# Start the conversational agent
+node packages/cli/dist/index.js eliza
+```
+
+Or link globally for convenience:
+
+```bash
+pnpm --filter @lpcli/cli link --global
+lpcli discover SOL
+```
+
+---
+
+## What it does
+
+### Meteora DLMM — Liquidity Provision
+
+Discover, score, and manage concentrated liquidity positions. Auto-swap from a single funding token, monitor P&L, claim fees, rebalance.
+
+```bash
+lpcli discover SOL                            # Ranked pools by fee yield + volume
+lpcli open <pool> --amount 200 --strategy spot
+lpcli positions                               # Live P&L, in/out of range
+lpcli close                                   # Interactive close + swap-back
+```
+
+### Pacifica — Perpetuals Trading
+
+Market and limit orders, stop-loss/take-profit, RSI-conditional entries, up to 20x leverage.
+
+```bash
+lpcli perps markets                           # Prices, funding rates, volume
+lpcli perps trade SOL long 0.5                # Market order
+lpcli perps sl SOL 120                        # Stop-loss
+lpcli perps tp SOL 160                        # Take-profit
+lpcli perps limit SOL long 0.5 --rsi "<30"    # Buy when RSI drops below 30
+lpcli perps rsi SOL                           # Current RSI indicator
+lpcli perps cancel SOL                        # Cancel orders
+```
+
+### Jupiter — Token Swaps
+
+```bash
+lpcli swap                                    # Interactive swap via Jupiter
+```
+
+### ElizaOS — Conversational Agent
+
+One command to rent a GPU on Nosana's decentralized network, boot an LLM, and start a conversational DeFi agent with full trading capabilities.
+
+```bash
+lpcli eliza                                   # Guided: pick GPU, auto-fund, boot LLM
+lpcli eliza --local                           # Use local Ollama instead
+```
+
+Wallet is local (OWS). Compute is decentralized (Nosana). Trading is on-chain (Solana).
 
 ---
 
@@ -47,7 +94,7 @@ From install to first LP position in under 2 minutes. No browser, no web app.
 LPCLI uses [Open Wallet Standard](https://openwallet.sh) for transaction signing. Your private keys are encrypted at rest and decrypted only inside an isolated signing process. LPCLI — and any agent using it — never sees raw key material.
 
 ```
-Agent / CLI / LPCLI
+Agent / CLI / ElizaOS
        │
        │  Builds transaction
        ▼
@@ -65,117 +112,6 @@ Agent / CLI / LPCLI
 └─────────────────────┘
 ```
 
-Setup:
-
-```bash
-# Install OWS
-curl -fsSL https://openwallet.sh/install.sh | bash
-
-# Create a wallet
-ows wallet create --name "lpcli"
-
-# LPCLI uses it automatically
-lpcli init   # detects OWS wallet
-```
-
-For local development and testing, LPCLI also supports raw Solana keypair files as a fallback (`~/.config/solana/id.json`).
-
----
-
-## Three interfaces, one SDK
-
-### Terminal
-
-```bash
-lpcli discover SOL --sort fee_yield --top 5
-lpcli pool <address>
-lpcli open <pool> --amount 3 --strategy spot
-lpcli positions
-lpcli close <position>
-lpcli claim <position>
-lpcli swap <pool> --amount 1 --token SOL
-```
-
-No LLM. No network dependencies beyond Solana RPC and Meteora's REST API.
-
-### Chat (Telegram)
-
-```bash
-lpcli connect openclaw     # wire into OpenClaw gateway
-lpcli connect telegram     # or run a direct Telegram bot
-```
-
-Then message your bot:
-
-```
-You: what are the best SOL pools right now?
-Bot: Top 3 SOL DLMM pools:
-     1. SOL-USDC  | 182% APR | Score: 92
-     2. SOL-USDT  | 156% APR | Score: 87
-     3. SOL-JitoSOL | 94% APR | Score: 85
-
-You: open 5 SOL spot on the first one
-Bot: Position opened.
-     Range: $68.50 - $71.20
-     Deposited: 5 SOL + 342.5 USDC
-     Tx: 4xK7...mQ9f
-
-You: how are my positions?
-Bot: SOL-USDC    | IN RANGE  | +$18.40 | 0.12 SOL fees
-     SOL-JitoSOL | OUT       | -$4.20  | 0.03 SOL fees
-
-You: rebalance the out-of-range one
-Bot: Rebalanced SOL-JitoSOL.
-     Claimed: 0.03 SOL
-     New range: centered at current price ±8 bins
-```
-
-Chat is powered by Claude Sonnet calling the same tools the CLI uses. The LLM translates natural language into tool calls — no magic.
-
-### Agent
-
-```typescript
-import { LPCLI } from "@lpcli/core";
-
-const lpcli = new LPCLI({
-  rpcUrl: process.env.HELIUS_RPC_URL,
-});
-
-// Autonomous rebalancing — runs on a 15-minute cron
-const positions = await lpcli.getPositions();
-
-for (const pos of positions) {
-  if (pos.status === "out_of_range") {
-    const closed = await lpcli.closePosition(pos.address);
-    await lpcli.openPosition({
-      pool: pos.pool,
-      amountX: closed.withdrawnX,
-      amountY: closed.withdrawnY,
-      strategy: "spot",
-    });
-  }
-}
-```
-
-Agents import `@lpcli/core` directly. No MCP overhead, no chat infrastructure. The SDK is a regular TypeScript library.
-
----
-
-## Pool discovery
-
-LPCLI doesn't just wrap Meteora's SDK — it adds intelligence on top.
-
-Most LP tools require you to already know the pool address. LPCLI's `discover` command fetches all DLMM pools, filters out blacklisted and illiquid pools, then scores and ranks them:
-
-| Signal | Weight | Source |
-|--------|--------|--------|
-| Fee yield (fees / TVL) | 40% | Meteora REST API |
-| Volume-to-TVL ratio | 30% | Meteora REST API |
-| Log TVL (liquidity depth) | 30% | Meteora REST API |
-| Momentum penalty | -20% if cooling | volume_1h vs volume_24h |
-
-The result: "find me the best SOL pool" returns a ranked list in milliseconds. No browsing, no spreadsheets.
-
 ---
 
 ## Architecture
@@ -183,78 +119,51 @@ The result: "find me the best SOL pool" returns a ranked list in milliseconds. N
 ```
 lpcli/
 ├── packages/
-│   ├── core/          # @lpcli/core — SDK
-│   ├── cli/           # @lpcli/cli  — terminal commands
-│   └── mcp/           # @lpcli/mcp  — MCP server for chat
-├── configs/
-│   └── system-prompt.md
-└── examples/
-    └── agent.ts       # autonomous rebalancing agent
+│   ├── core/          # @lpcli/core  — SDK (all DeFi logic)
+│   ├── cli/           # @lpcli/cli   — terminal commands
+│   ├── mcp/           # @lpcli/mcp   — MCP server for AI agents
+│   ├── eliza/         # @lpcli/eliza — ElizaOS plugin (17 actions)
+│   ├── x402/          # @lpcli/x402  — HTTP + payment layer
+│   └── skills/        # @lpcli/skills — agent skill definitions
 ```
 
 ```
-@lpcli/core (the product)
-  │
-  ├── MeteoraClient     fetch-based REST client, 5-min cache
-  ├── ScoringEngine     gate → score → sort (pluggable weights)
-  ├── DLMMService       position ops via @meteora-ag/dlmm
-  ├── WalletService     OWS enclave signing + keypair fallback
-  └── Error classes     NetworkError (retryable) / TransactionError (not)
+@lpcli/core  ←── cli   (terminal)
+             ←── mcp   (AI agents via MCP)
+             ←── eliza  (conversational agent)
+             ←── x402  (HTTP + payments)
 ```
 
-```
-     CLI                    MCP Server              Agent Script
-      │                        │                        │
-      │  lpcli discover        │  tool: discover_pools  │  lpcli.discoverPools()
-      │  lpcli open            │  tool: open_position   │  lpcli.openPosition()
-      │  lpcli positions       │  tool: get_positions   │  lpcli.getPositions()
-      │                        │                        │
-      └────────────────────────┼────────────────────────┘
-                               │
-                        @lpcli/core
-                               │
-                    ┌──────────┼──────────┐
-                    ▼          ▼          ▼
-              Meteora API   Solana RPC   OWS Vault
-                             (Helius)    (~/.ows/)
-```
+All interfaces share one SDK. A trade placed from the terminal uses the same code path as one triggered by the AI agent.
 
 ---
 
-## Design decisions
+## MCP Tools
 
-| Decision | What we chose | Why |
-|----------|--------------|-----|
-| CLI-first | CLI is primary, chat is opt-in via `lpcli connect` | No external system dependency on Day 1 |
-| OWS for signing | Keys never leave machine, signing in isolated enclave | Agent-safe — AI can manage positions without key exposure |
-| No tx retry | NetworkError retryable, TransactionError never | Retrying a failed tx could double-spend |
-| Native fetch | No axios | Zero HTTP client dependencies |
-| Position width | `max(10, floor(50 / binStep))` bins | ~50bps coverage regardless of bin step |
-| Scoring weights | 40/30/30 fee-yield/volume/tvl | Heuristic starting point, pluggable |
-| P&L best-effort | null if entry price unavailable | Don't fabricate numbers |
-| No guardrails | Raw tool access, no "are you sure?" | Built for power users and autonomous agents |
+LPCLI exposes 16 MCP tools for AI agent integration:
+
+| Tool | Description | Wallet |
+|------|-------------|--------|
+| `check_ready` | System status — OWS, wallet, address | No |
+| `discover_pools` | Find and rank Meteora DLMM pools | No |
+| `get_pool_info` | Pool details by address | No |
+| `get_positions` | Open LP positions with P&L | Yes |
+| `open_position` | Open LP position | Yes |
+| `close_position` | Close LP + claim fees | Yes |
+| `claim_fees` | Claim fees without closing | Yes |
+| `perps_list_markets` | Perps markets, prices, funding | No |
+| `perps_get_account` | Account balance and margin | Yes |
+| `perps_get_positions` | Open perps positions with PnL | Yes |
+| `perps_execute_trade` | Place market order | Yes |
+| `perps_close_position` | Close perps position | Yes |
+| `perps_set_sl` | Set stop-loss | Yes |
+| `perps_set_tp` | Set take-profit | Yes |
+| `perps_deposit` | Deposit USDC to Pacifica | Yes |
+| `perps_withdraw` | Withdraw USDC from Pacifica | Yes |
 
 ---
 
-## Setup
-
-### Prerequisites
-
-- Node.js 18+
-- pnpm 9+
-- Solana wallet (OWS recommended, keypair file as fallback)
-- Helius RPC key (free tier works)
-
-### Install from source
-
-```bash
-git clone https://github.com/bibhu/lpcli.git
-cd lpcli
-pnpm install
-pnpm build
-```
-
-### Environment
+## Configuration
 
 ```bash
 cp .env.example .env
@@ -262,55 +171,29 @@ cp .env.example .env
 
 ```env
 HELIUS_RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_KEY
-OWS_WALLET_NAME=lpcli
-# or fallback:
-# PRIVATE_KEY=~/.config/solana/id.json
+OWS_WALLET=lpcli
 ```
 
-### Verify
-
-```bash
-pnpm --filter @lpcli/core test:e2e
-```
-
-This hits the live Meteora API and confirms pool discovery + scoring works.
-
----
-
-## Tools
-
-| Tool | CLI | MCP | SDK |
-|------|-----|-----|-----|
-| Discover pools | `lpcli discover SOL` | `discover_pools` | `lpcli.discoverPools("SOL")` |
-| Pool info | `lpcli pool <addr>` | `get_pool_info` | `lpcli.getPoolInfo(addr)` |
-| Open position | `lpcli open <pool>` | `open_position` | `lpcli.openPosition({...})` |
-| Close position | `lpcli close <pos>` | `close_position` | `lpcli.closePosition(addr)` |
-| Portfolio | `lpcli positions` | `get_positions` | `lpcli.getPositions()` |
-| Claim fees | `lpcli claim <pos>` | `claim_fees` | `lpcli.claimFees(addr)` |
-| Swap | `lpcli swap <pool>` | `swap` | `lpcli.swap({...})` |
+| Variable | Description |
+|----------|-------------|
+| `HELIUS_RPC_URL` or `RPC_URL` | Primary Solana RPC |
+| `READ_RPC_URL` | Read-only RPC (defaults to RPC_URL) |
+| `OWS_WALLET` | OWS wallet name (default: "lpcli") |
+| `CLUSTER` | "mainnet" or "devnet" |
+| `FUNDING_TOKEN_MINT` | Override funding token mint |
+| `FEE_RESERVE_SOL` | SOL reserved for tx fees (default: 0.02) |
 
 ---
 
-## Competitive context
+## Prerequisites
 
-[Cuendillar](https://github.com/stdthoth/cuendillar) is the only other Meteora DLMM MCP server. It wraps raw SDK methods — you must already know the pool address, there's no scoring, no P&L tracking, no multi-channel support. LPCLI adds pool intelligence, position monitoring, CLI-first UX, and OWS wallet security on top of the same primitives.
-
----
-
-## Status
-
-- [x] Pool discovery with scoring
-- [x] Meteora REST client with cache
-- [x] E2E tests against live API
-- [ ] Position operations (open, close, get)
-- [ ] OWS wallet signing integration
-- [ ] CLI commands
-- [ ] MCP server
-- [ ] Telegram integration
+- Node.js 18+
+- pnpm 9+
+- Solana wallet via OWS
+- Helius RPC key (free tier works)
 
 ---
 
 ## License
 
 MIT
-# lpcli

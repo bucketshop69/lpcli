@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>lpcli eliza — Demo Storyboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bubblegum+Sans&family=Space+Mono:wght@400;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #000000;
+    --bg-terminal: #080808;
+    --white: #ffffff;
+    --white-dim: #cccccc;
+    --gray: #888888;
+    --gray-dark: #222222;
+    --gray-subtle: #555555;
+  }
+
+  body {
+    background: #000000;
+    color: var(--white);
+    font-family: 'Bubblegum Sans', cursive;
+    padding: 40px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 36px;
+    color: var(--white);
+    margin-bottom: 8px;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: var(--gray);
+    font-size: 14px;
+    margin-bottom: 48px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .scene {
+    background: var(--bg);
+    border: 1px solid var(--gray-dark);
+    border-radius: 12px;
+    margin-bottom: 40px;
+    overflow: hidden;
+  }
+
+  .scene-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 24px;
+    background: #0a0a0a;
+    border-bottom: 1px solid var(--gray-dark);
+  }
+
+  .scene-number {
+    background: var(--white);
+    color: var(--bg);
+    font-weight: 700;
+    font-size: 13px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .scene-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--white);
+  }
+
+  .scene-timing {
+    font-size: 12px;
+    color: var(--gray);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .scene-body {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 0;
+  }
+
+  .scene-visual {
+    padding: 32px;
+    border-right: 1px solid var(--gray-dark);
+    min-height: 340px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .scene-notes {
+    padding: 24px;
+    background: #050505;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--gray);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .scene-notes h4 {
+    color: var(--white-dim);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 12px;
+    font-family: 'Bubblegum Sans', cursive;
+    font-size: 14px;
+  }
+
+  .scene-notes ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  .scene-notes li {
+    padding: 4px 0;
+    padding-left: 16px;
+    position: relative;
+  }
+
+  .scene-notes li::before {
+    content: ">";
+    position: absolute;
+    left: 0;
+    color: var(--white);
+  }
+
+  /* Terminal mock */
+  .terminal {
+    background: var(--bg-terminal);
+    border: 1px solid var(--gray-dark);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+    width: 100%;
+    max-width: 900px;
+  }
+
+  .terminal-bar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 16px;
+    background: #111111;
+    border-bottom: 1px solid var(--gray-dark);
+  }
+
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-red { background: #666666; }
+  .dot-yellow { background: #888888; }
+  .dot-green { background: #aaaaaa; }
+
+  .terminal-title {
+    font-size: 12px;
+    color: var(--gray);
+    margin-left: 8px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .terminal-body {
+    padding: 20px 24px;
+    font-size: 15px;
+    line-height: 1.7;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .prompt { color: var(--white); }
+  .cmd { color: var(--white); font-weight: 700; }
+  .dim { color: var(--gray); }
+  .subtle { color: var(--gray-subtle); }
+  .highlight { color: var(--white); font-weight: 700; }
+  .warn { color: var(--white-dim); font-style: italic; }
+  .ok { color: var(--white); }
+  .err { color: var(--gray); text-decoration: line-through; }
+  .purple { color: var(--white); }
+  .orange { color: var(--white-dim); }
+
+  /* Hero box */
+  .hero-box {
+    border: 2px solid var(--white);
+    padding: 36px 48px;
+    text-align: center;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .hero-box .title {
+    font-size: 30px;
+    font-weight: 600;
+    color: var(--white);
+    margin-bottom: 24px;
+  }
+
+  .hero-box .title span { color: var(--white); text-decoration: underline; text-underline-offset: 6px; }
+
+  .hero-box .tagline {
+    font-size: 15px;
+    color: var(--white-dim);
+    line-height: 2;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .hero-box .tagline .label { color: var(--white); font-weight: 700; }
+
+  /* Pillar cards */
+  .pillars {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .pillar {
+    background: var(--bg-terminal);
+    border: 1px solid var(--gray-dark);
+    border-radius: 10px;
+    padding: 28px 32px;
+    width: 240px;
+    text-align: center;
+  }
+
+  .pillar-icon {
+    font-size: 28px;
+    margin-bottom: 12px;
+    color: var(--white);
+  }
+
+  .pillar h3 {
+    font-size: 18px;
+    margin-bottom: 8px;
+    color: var(--white);
+  }
+
+  .pillar p {
+    font-size: 12px;
+    color: var(--gray);
+    line-height: 1.6;
+    font-family: 'Space Mono', monospace;
+  }
+
+  /* Capability cards */
+  .caps {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .cap {
+    background: var(--bg-terminal);
+    border: 1px solid var(--gray-dark);
+    border-radius: 10px;
+    padding: 24px 28px;
+    width: 200px;
+    text-align: center;
+  }
+
+  .cap h3 {
+    font-size: 16px;
+    margin-bottom: 6px;
+    color: var(--white);
+  }
+
+  .cap p {
+    font-size: 11px;
+    color: var(--gray);
+    line-height: 1.5;
+    font-family: 'Space Mono', monospace;
+  }
+
+  /* Chat mock */
+  .chat {
+    max-width: 800px;
+    width: 100%;
+  }
+
+  .chat-msg {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    align-items: flex-start;
+  }
+
+  .chat-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    flex-shrink: 0;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .chat-avatar.user {
+    background: var(--gray-dark);
+    color: var(--white-dim);
+  }
+
+  .chat-avatar.agent {
+    background: var(--white);
+    color: var(--bg);
+  }
+
+  .chat-bubble {
+    background: var(--bg-terminal);
+    border: 1px solid var(--gray-dark);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 14px;
+    line-height: 1.6;
+    max-width: 600px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .chat-bubble.user-bubble {
+    background: #0f0f0f;
+  }
+
+  .chat-bubble .pool-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    font-size: 13px;
+  }
+
+  /* CTA */
+  .cta-content {
+    text-align: center;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  .cta-logo {
+    font-size: 64px;
+    font-weight: 700;
+    color: var(--white);
+    margin-bottom: 16px;
+  }
+
+  .cta-tagline {
+    font-size: 24px;
+    color: var(--white);
+    margin-bottom: 24px;
+  }
+
+  .cta-links {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .cta-link {
+    padding: 10px 24px;
+    border: 1px solid var(--gray-dark);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--white);
+    background: var(--bg-terminal);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .built-with {
+    margin-top: 24px;
+    font-size: 14px;
+    color: var(--gray);
+  }
+
+  .built-with span { color: var(--white); }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .scene-body { grid-template-columns: 1fr; }
+    .scene-visual { border-right: none; border-bottom: 1px solid var(--gray-dark); }
+  }
+</style>
+</head>
+<body>
+
+<h1>lpcli eliza — Demo Storyboard</h1>
+<p class="subtitle">Nosana x ElizaOS Hackathon &nbsp;·&nbsp; ~55 seconds &nbsp;·&nbsp; 1920×1080 @ 30fps</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 1: HERO -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="scene-number">01</span>
+      <span class="scene-title">Hero — "What is this?"</span>
+    </div>
+    <span class="scene-timing">0:00 – 0:08 &nbsp;·&nbsp; 240 frames</span>
+  </div>
+  <div class="scene-body">
+    <div class="scene-visual">
+      <div class="hero-box">
+        <div class="title"><span>lpcli eliza</span> — conversational DeFi agent</div>
+        <div class="tagline">
+          <div><span class="label">Wallet</span> is local <span class="dim">(Open Wallet Standard)</span></div>
+          <div><span class="label">Compute</span> is decentralized <span class="dim">(Nosana GPU)</span></div>
+          <div><span class="label">Agent</span> is open-source <span class="dim">(ElizaOS)</span></div>
+          <div><span class="label">Trading</span> is on-chain <span class="dim">(Solana)</span></div>
+          <div style="margin-top:12px;color:var(--white);font-size:14px;font-weight:700;">No centralized dependency anywhere.</div>
+        </div>
+      </div>
+    </div>
+    <div class="scene-notes">
+      <h4>Direction</h4>
+      <ul>
+        <li>Fade in the bordered box — same style as the real CLI banner</li>
+        <li>Type each tagline line-by-line with cursor</li>
+        <li>"No centralized dependency" glows green at the end</li>
+        <li>Set the tone: this is a terminal-native product</li>
+      </ul>
+      <h4 style="margin-top:20px;">Audio / Mood</h4>
+      <ul>
+        <li>Dark ambient, low synth drone</li>
+        <li>Subtle keystroke sounds on type</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 2: THE STACK -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="scene-number">02</span>
+      <span class="scene-title">The Stack — Three Pillars</span>
+    </div>
+    <span class="scene-timing">0:08 – 0:16 &nbsp;·&nbsp; 240 frames</span>
+  </div>
+  <div class="scene-body">
+    <div class="scene-visual">
+      <div style="text-align:center;margin-bottom:28px;">
+        <div style="font-size:13px;color:var(--gray);text-transform:uppercase;letter-spacing:0.1em;font-family:'Space Mono',monospace;">Fully decentralized AI agent stack</div>
+      </div>
+      <div class="pillars">
+        <div class="pillar" style="border-top:2px solid var(--white);">
+          <div class="pillar-icon">⟠</div>
+          <h3>OWS Wallet</h3>
+          <p>Open Wallet Standard<br>Keys never leave your machine<br>No extensions, no custodians</p>
+        </div>
+        <div class="pillar" style="border-top:2px solid var(--white);">
+          <div class="pillar-icon">◈</div>
+          <h3>Nosana GPU</h3>
+          <p>Decentralized compute on Solana<br>Pick your GPU tier<br>Pay per minute in NOS</p>
+        </div>
+        <div class="pillar" style="border-top:2px solid var(--white);">
+          <div class="pillar-icon">◉</div>
+          <h3>ElizaOS Agent</h3>
+          <p>Open-source agent framework<br>Plugin architecture<br>Qwen3 model via Ollama</p>
+        </div>
+      </div>
+    </div>
+    <div class="scene-notes">
+      <h4>Direction</h4>
+      <ul>
+        <li>Cards slide up one-by-one, left to right</li>
+        <li>Each card gets a subtle glow on its top border color</li>
+        <li>Arrows or flow lines connecting: Wallet → Agent → GPU</li>
+        <li>Emphasize: zero cloud providers in the stack</li>
+      </ul>
+      <h4 style="margin-top:20px;">Key Message</h4>
+      <ul>
+        <li>This is the first DeFi agent where everything is decentralized</li>
+        <li>Your keys, your GPU, your agent</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 3: LAUNCH WIZARD -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="scene-number">03</span>
+      <span class="scene-title">Launch — One Command</span>
+    </div>
+    <span class="scene-timing">0:16 – 0:28 &nbsp;·&nbsp; 360 frames</span>
+  </div>
+  <div class="scene-body">
+    <div class="scene-visual">
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="dot dot-red"></div>
+          <div class="dot dot-yellow"></div>
+          <div class="dot dot-green"></div>
+          <span class="terminal-title">lpcli — eliza</span>
+        </div>
+        <div class="terminal-body">
+          <div><span class="prompt">❯ </span><span class="cmd">lpcli eliza</span></div>
+          <br>
+          <div class="dim">  Step 1/6 — Checking Nosana CLI...</div>
+          <div class="ok">  [ok] Nosana CLI installed</div>
+          <br>
+          <div class="dim">  Step 2/6 — Checking wallet...</div>
+          <div class="ok">  [ok] Wallet: lpcli (4E4N...2b3P)</div>
+          <br>
+          <div class="dim">  Step 3/6 — Select GPU...</div>
+          <div style="margin-top:4px;">
+            <span class="dim">  #  GPU</span><span style="margin-left:100px;" class="dim">NOS/hr</span>
+          </div>
+          <div>  <span class="ok">1  NVIDIA 3080</span><span style="margin-left:70px;">0.40</span></div>
+          <div>  <span class="highlight">2  NVIDIA 4060</span><span style="margin-left:72px;">0.27</span> <span class="warn">← selected</span></div>
+          <div>  <span class="dim">3  NVIDIA 4090</span><span style="margin-left:72px;">1.33</span></div>
+          <br>
+          <div class="dim">  Selected: NVIDIA 4060 — 60 min — 0.27 NOS</div>
+          <br>
+          <div class="dim">  Step 4/6 — Balances...</div>
+          <div>  <span class="ok">SOL: 0.0669</span> &nbsp; <span class="ok">NOS: auto-acquired via Jupiter</span></div>
+          <br>
+          <div class="dim">  Step 6/6 — Launching...</div>
+          <div class="ok">  [ok] Nosana job posted</div>
+          <div class="ok">  [ok] LLM ready — qwen3:8b on NVIDIA 4060</div>
+          <div class="ok">  [ok] ElizaOS running at localhost:3000</div>
+        </div>
+      </div>
+    </div>
+    <div class="scene-notes">
+      <h4>Direction</h4>
+      <ul>
+        <li>Type <code>lpcli eliza</code> with keystroke sound</li>
+        <li>Steps appear sequentially with checkmarks</li>
+        <li>GPU table slides in — highlight the selected row</li>
+        <li>Show NOS auto-swap via Jupiter (one line)</li>
+        <li>Final "ElizaOS running" line glows green</li>
+        <li>This is the hero sequence — spend time here</li>
+      </ul>
+      <h4 style="margin-top:20px;">Key Message</h4>
+      <ul>
+        <li>One command: wallet check, GPU rent, model pull, agent boot</li>
+        <li>Auto-acquires NOS tokens via Jupiter if needed</li>
+        <li>No manual Docker, no SSH, no cloud console</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 4: AGENT IN ACTION -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="scene-number">04</span>
+      <span class="scene-title">Agent in Action — Real DeFi</span>
+    </div>
+    <span class="scene-timing">0:28 – 0:40 &nbsp;·&nbsp; 360 frames</span>
+  </div>
+  <div class="scene-body">
+    <div class="scene-visual">
+      <div class="chat">
+        <!-- User message 1 -->
+        <div class="chat-msg">
+          <div class="chat-avatar user">Y</div>
+          <div class="chat-bubble user-bubble">
+            What are the best SOL pools right now?
+          </div>
+        </div>
+
+        <!-- Agent response 1 -->
+        <div class="chat-msg">
+          <div class="chat-avatar agent">lp</div>
+          <div class="chat-bubble">
+            <div style="color:var(--white-dim);margin-bottom:8px;">Top SOL DLMM pools on Meteora:</div>
+            <div class="pool-row">
+              <span>#1 SOL-USDC</span>
+              <span>APR 342%</span>
+              <span class="dim">TVL $2.1M</span>
+            </div>
+            <div class="pool-row">
+              <span>#2 SOL-USDT</span>
+              <span>APR 285%</span>
+              <span class="dim">TVL $1.8M</span>
+            </div>
+            <div class="pool-row">
+              <span class="dim">#3 SOL-JitoSOL</span>
+              <span class="dim">APR 198%</span>
+              <span class="dim">TVL $890K</span>
+            </div>
+            <div style="margin-top:8px;font-size:12px;color:var(--gray);">Ranked by fee yield + volume momentum</div>
+          </div>
+        </div>
+
+        <!-- User message 2 -->
+        <div class="chat-msg">
+          <div class="chat-avatar user">Y</div>
+          <div class="chat-bubble user-bubble">
+            Long 0.2 SOL on Pacifica, 5x leverage
+          </div>
+        </div>
+
+        <!-- Agent response 2 -->
+        <div class="chat-msg">
+          <div class="chat-avatar agent">lp</div>
+          <div class="chat-bubble">
+            <div style="color:var(--white-dim);margin-bottom:4px;">Opening position on Pacifica:</div>
+            <div style="font-size:13px;">
+              <div><span class="dim">Side:</span> <span class="cmd">LONG</span></div>
+              <div><span class="dim">Size:</span> 0.2 SOL ($28.40)</div>
+              <div><span class="dim">Leverage:</span> 5x</div>
+              <div><span class="dim">Entry:</span> $142.00</div>
+            </div>
+            <div style="margin-top:8px;">
+              <span>✓ Position opened</span> <span class="dim">— TX: 3xK9...fR2m</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- User message 3 -->
+        <div class="chat-msg">
+          <div class="chat-avatar user">Y</div>
+          <div class="chat-bubble user-bubble">
+            Set a stop loss at $135
+          </div>
+        </div>
+
+        <!-- Agent response 3 -->
+        <div class="chat-msg">
+          <div class="chat-avatar agent">lp</div>
+          <div class="chat-bubble">
+            <span>✓ Stop-loss set at $135.00</span> <span class="dim">— triggers auto-close if price drops -4.9%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scene-notes">
+      <h4>Direction</h4>
+      <ul>
+        <li>Chat interface — messages appear one by one</li>
+        <li>User types, agent responds with structured data</li>
+        <li>Show 3 capabilities in rapid fire:</li>
+        <li>1. Meteora DLMM pool discovery</li>
+        <li>2. Pacifica perps — open a long</li>
+        <li>3. Risk management — stop-loss</li>
+        <li>Each action is real on-chain, not simulated</li>
+      </ul>
+      <h4 style="margin-top:20px;">Key Message</h4>
+      <ul>
+        <li>Natural language → on-chain execution</li>
+        <li>The agent understands DeFi context</li>
+        <li>Same @lpcli/core SDK powering CLI + MCP + agent</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 5: CAPABILITIES -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="scene-number">05</span>
+      <span class="scene-title">Capabilities — What the Agent Can Do</span>
+    </div>
+    <span class="scene-timing">0:40 – 0:48 &nbsp;·&nbsp; 240 frames</span>
+  </div>
+  <div class="scene-body">
+    <div class="scene-visual">
+      <div style="text-align:center;margin-bottom:28px;">
+        <div style="font-size:24px;font-weight:600;color:var(--white);">One agent. Full DeFi stack.</div>
+        <div style="font-size:13px;color:var(--gray);margin-top:6px;font-family:'Space Mono',monospace;">Powered by @lpcli/core</div>
+      </div>
+      <div class="caps">
+        <div class="cap" style="border-top:2px solid var(--white);">
+          <h3>Meteora DLMM</h3>
+          <p>Pool discovery, scoring<br>Open/close positions<br>Fee harvesting</p>
+        </div>
+        <div class="cap" style="border-top:2px solid var(--white);">
+          <h3>Pacifica Perps</h3>
+          <p>Longs, shorts, 20x leverage<br>Stop-loss, take-profit<br>RSI indicators</p>
+        </div>
+        <div class="cap" style="border-top:2px solid var(--white);">
+          <h3>Jupiter Swaps</h3>
+          <p>Best route aggregation<br>Auto NOS acquisition<br>Any SPL token</p>
+        </div>
+        <div class="cap" style="border-top:2px solid var(--white);">
+          <h3>Portfolio</h3>
+          <p>Position tracking<br>PnL reporting<br>Risk alerts</p>
+        </div>
+      </div>
+      <div style="text-align:center;margin-top:24px;">
+        <div style="font-size:12px;color:var(--gray);font-family:'Space Mono',monospace;">
+          Terminal &nbsp;·&nbsp; MCP &nbsp;·&nbsp; ElizaOS &nbsp;·&nbsp; SDK — same engine everywhere
+        </div>
+      </div>
+    </div>
+    <div class="scene-notes">
+      <h4>Direction</h4>
+      <ul>
+        <li>Cards pop in one by one with scale animation</li>
+        <li>Each card gets its accent color glow</li>
+        <li>"Same engine everywhere" fades in last</li>
+        <li>Quick scene — just reinforce breadth</li>
+      </ul>
+      <h4 style="margin-top:20px;">Protocols highlighted</h4>
+      <ul>
+        <li>Meteora — DLMM concentrated liquidity</li>
+        <li>Pacifica — perpetual futures</li>
+        <li>Jupiter — swap aggregation</li>
+        <li>NOT mentioned: Polymarket, predictions</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 6: CTA -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="scene-number">06</span>
+      <span class="scene-title">CTA — Close</span>
+    </div>
+    <span class="scene-timing">0:48 – 0:55 &nbsp;·&nbsp; 210 frames</span>
+  </div>
+  <div class="scene-body">
+    <div class="scene-visual">
+      <div class="cta-content">
+        <div class="cta-logo">lpcli</div>
+        <div class="cta-tagline">Your AI. Your GPU. Your keys.</div>
+        <div class="cta-links">
+          <div class="cta-link">npm install -g lpcli</div>
+          <div class="cta-link">github.com/bucketshop69/lpcli</div>
+        </div>
+        <div class="built-with">
+          <span>Built with</span> &nbsp;
+          ElizaOS &nbsp;·&nbsp;
+          Nosana &nbsp;·&nbsp;
+          Solana
+        </div>
+        <div style="margin-top:16px;font-size:12px;color:var(--gray);">
+          Inspired by OpenClaw — reclaim personal AI from Big Tech
+        </div>
+      </div>
+    </div>
+    <div class="scene-notes">
+      <h4>Direction</h4>
+      <ul>
+        <li>"lpcli" fades in large with green glow</li>
+        <li>Tagline types out underneath</li>
+        <li>Links appear as terminal-style buttons</li>
+        <li>"Built with" line credits the hackathon stack</li>
+        <li>Hold 2 seconds on final frame</li>
+      </ul>
+      <h4 style="margin-top:20px;">Hackathon alignment</h4>
+      <ul>
+        <li>ElizaOS — agent framework ✓</li>
+        <li>Nosana — decentralized GPU ✓</li>
+        <li>Personal AI — not cloud-locked ✓</li>
+        <li>OpenClaw — the movement ✓</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- TIMELINE SUMMARY -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div style="margin-top:48px;padding:32px;background:var(--bg);border:1px solid var(--gray-dark);border-radius:12px;">
+  <div style="text-align:center;margin-bottom:24px;">
+    <div style="font-size:14px;color:var(--gray);text-transform:uppercase;letter-spacing:0.1em;font-family:'Space Mono',monospace;">Timeline — 55 seconds @ 30fps = 1650 frames</div>
+  </div>
+
+  <div style="display:flex;height:40px;border-radius:6px;overflow:hidden;border:1px solid var(--gray-dark);">
+    <div style="flex:8;background:var(--white);opacity:0.15;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--white);font-weight:600;font-family:'Space Mono',monospace;">01 HERO</div>
+    <div style="flex:8;background:var(--white);opacity:0.22;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--white);font-weight:600;font-family:'Space Mono',monospace;">02 STACK</div>
+    <div style="flex:12;background:var(--white);opacity:0.30;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--white);font-weight:600;font-family:'Space Mono',monospace;">03 LAUNCH</div>
+    <div style="flex:12;background:var(--white);opacity:0.22;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--white);font-weight:600;font-family:'Space Mono',monospace;">04 AGENT</div>
+    <div style="flex:8;background:var(--white);opacity:0.15;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--white);font-weight:600;font-family:'Space Mono',monospace;">05 CAPS</div>
+    <div style="flex:7;background:var(--white);opacity:0.30;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--white);font-weight:600;font-family:'Space Mono',monospace;">06 CTA</div>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--gray);font-family:'Space Mono',monospace;">
+    <span>0:00</span>
+    <span>0:08</span>
+    <span>0:16</span>
+    <span>0:28</span>
+    <span>0:40</span>
+    <span>0:48</span>
+    <span>0:55</span>
+  </div>
+</div>
+
+<div style="text-align:center;margin-top:40px;padding-bottom:60px;">
+  <div style="font-size:12px;color:var(--gray);font-family:'Space Mono',monospace;">
+    Storyboard for Remotion render &nbsp;·&nbsp; packages/video/ &nbsp;·&nbsp; Nosana x ElizaOS Hackathon
+  </div>
+</div>
+
+</body>
+</html>

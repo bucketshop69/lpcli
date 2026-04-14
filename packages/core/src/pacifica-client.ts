@@ -1,0 +1,217 @@
+// ============================================================================
+// Pacifica REST Client — @lpcli/core
+//
+// HTTP layer for the Pacifica perps API.
+// Public endpoints (no auth) + authenticated withdrawal.
+// ============================================================================
+
+import type { PacificaRequestEnvelope } from './pacifica.js';
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+export const PACIFICA_REST_URL = 'https://api.pacifica.fi/api/v1';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface PacificaMarketInfo {
+  symbol: string;
+  tick_size: string;
+  lot_size: string;
+  max_leverage: number;
+  min_order_size: string;
+  max_order_size: string;
+  funding_rate: string;
+  isolated_only: boolean;
+}
+
+export interface PacificaPriceInfo {
+  symbol: string;
+  oracle: string;
+  mark: string;
+  mid: string;
+  funding: string;
+  open_interest: string;
+  volume_24h: string;
+  timestamp: number;
+}
+
+export interface PacificaAccountInfo {
+  balance: string;
+  account_equity: string;
+  available_to_spend: string;
+  available_to_withdraw: string;
+  total_margin_used: string;
+  cross_mmr: string;
+  fee_level: number;
+  maker_fee: string;
+  taker_fee: string;
+  positions_count: number;
+  orders_count: number;
+  stop_orders_count: number;
+  updated_at: number;
+}
+
+export interface PacificaPosition {
+  symbol: string;
+  side: 'bid' | 'ask';
+  amount: string;
+  entry_price: string;
+  funding: string;
+  isolated: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface PacificaOrder {
+  order_id: number;
+  symbol: string;
+  side: 'bid' | 'ask';
+  price: string;
+  initial_amount: string;
+  amount?: string;
+  filled_amount: string;
+  cancelled_amount?: string;
+  stop_price?: string;
+  order_type: string;
+  stop_parent_order_id?: number | null;
+  trigger_price_type?: string;
+  tif?: string;
+  reduce_only: boolean;
+  instrument_type?: string;
+  client_order_id?: string | null;
+  created_at: number;
+  updated_at?: number;
+}
+
+export interface PacificaKline {
+  t: number;   // open time ms
+  T: number;   // close time ms
+  s: string;   // symbol
+  i: string;   // interval
+  o: string;   // open
+  h: string;   // high
+  l: string;   // low
+  c: string;   // close
+  v: string;   // volume
+  n: number;   // trade count
+}
+
+export const PACIFICA_KLINE_INTERVALS = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d'] as const;
+export type PacificaKlineInterval = typeof PACIFICA_KLINE_INTERVALS[number];
+
+// ============================================================================
+// Errors
+// ============================================================================
+
+export class PacificaApiError extends Error {
+  constructor(public code: number, public status: number, message: string) {
+    super(message);
+    this.name = 'PacificaApiError';
+  }
+}
+
+// ============================================================================
+// Client
+// ============================================================================
+
+export class PacificaClient {
+  constructor(private baseUrl: string = PACIFICA_REST_URL) {}
+
+  // --- Public endpoints (no auth) ---
+
+  /** GET /info — list all available markets. */
+  async getMarkets(): Promise<PacificaMarketInfo[]> {
+    return this.get<PacificaMarketInfo[]>('/info');
+  }
+
+  /** GET /info/prices — current prices for all markets. */
+  async getPrices(): Promise<PacificaPriceInfo[]> {
+    return this.get<PacificaPriceInfo[]>('/info/prices');
+  }
+
+  /** GET /account?account=<address> — account balance and margin info. */
+  async getAccountInfo(address: string): Promise<PacificaAccountInfo> {
+    return this.get<PacificaAccountInfo>(`/account?account=${address}`);
+  }
+
+  /** GET /positions?account=<address> — open positions. */
+  async getPositions(address: string): Promise<PacificaPosition[]> {
+    return this.get<PacificaPosition[]>(`/positions?account=${address}`);
+  }
+
+  /** GET /kline — candlestick data. */
+  async getKlines(symbol: string, interval: PacificaKlineInterval, startTime: number): Promise<PacificaKline[]> {
+    return this.get<PacificaKline[]>(`/kline?symbol=${symbol}&interval=${interval}&start_time=${startTime}`);
+  }
+
+  /** GET /orders?account=<address> — open orders. */
+  async getOpenOrders(address: string): Promise<PacificaOrder[]> {
+    return this.get<PacificaOrder[]>(`/orders?account=${address}`);
+  }
+
+  // --- Authenticated endpoints ---
+
+  /**
+   * Generic authenticated POST — sends a signed envelope to the given path.
+   * Returns the parsed response body (the `data` field if present, else full body).
+   */
+  async postSigned<T = unknown>(path: string, envelope: PacificaRequestEnvelope): Promise<T> {
+    const resp = await fetch(`${this.baseUrl}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(envelope),
+    });
+
+    const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+      success?: boolean;
+      data?: T;
+      code?: number;
+      error?: string;
+      order_id?: number;
+    };
+
+    if (!resp.ok || body.success === false) {
+      throw new PacificaApiError(
+        body.code ?? resp.status,
+        resp.status,
+        body.error ?? `Request failed: ${resp.status}`,
+      );
+    }
+
+    return (body.data ?? body) as T;
+  }
+
+  /**
+   * POST /account/withdraw — submit a signed withdrawal request.
+   */
+  async requestWithdrawal(envelope: PacificaRequestEnvelope): Promise<void> {
+    await this.postSigned('/account/withdraw', envelope);
+  }
+
+  // --- Internal ---
+
+  private async get<T>(path: string): Promise<T> {
+    const resp = await fetch(`${this.baseUrl}${path}`);
+
+    const body = await resp.json() as {
+      success?: boolean;
+      data?: T;
+      code?: number;
+      error?: string;
+    };
+
+    if (!resp.ok || !body.success) {
+      throw new PacificaApiError(
+        body.code ?? resp.status,
+        resp.status,
+        body.error ?? `Request failed: ${resp.status}`,
+      );
+    }
+
+    return body.data as T;
+  }
+}

@@ -6,7 +6,8 @@
 // ============================================================================
 
 import { readFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Load .env file if present (Node 20.12+). Silently ignore if missing.
 try { process.loadEnvFile(); } catch { /* no .env — fine */ }
@@ -47,7 +48,7 @@ export const SOL_MINT = 'So11111111111111111111111111111111111111112';
 export const LAMPORTS_PER_SOL = 1_000_000_000;
 
 /** Default fee reserve: 0.02 SOL. */
-const DEFAULT_FEE_RESERVE_SOL = 0.02;
+export const DEFAULT_FEE_RESERVE_SOL = 0.02;
 
 /** Position account rent (~0.06 SOL). Refunded on close. Protocol constant, not configurable. */
 export const POSITION_RENT_LAMPORTS = 60_000_000;
@@ -74,19 +75,39 @@ const DEFAULT_FUNDING_TOKEN: FundingToken = {
 // ============================================================================
 
 /**
- * Find config.json by walking up from cwd.
- * Looks for config.json in cwd, then parent dirs up to filesystem root.
+ * Find config.json by walking up from cwd, then falling back to the
+ * package install directory (so `lpcli` works from any cwd).
  */
 function findConfigFile(): string | null {
+  // 1. Walk up from cwd (original behaviour)
   let dir = process.cwd();
   const root = resolve('/');
   while (true) {
     const candidate = resolve(dir, 'config.json');
     if (existsSync(candidate)) return candidate;
     const parent = resolve(dir, '..');
-    if (parent === dir || dir === root) return null;
+    if (parent === dir || dir === root) break;
     dir = parent;
   }
+
+  // 2. Fallback: resolve relative to the package install path.
+  //    The compiled config.js lives at packages/core/dist/config.js —
+  //    walk up to the monorepo root and check there.
+  try {
+    const thisFile = fileURLToPath(import.meta.url);
+    let pkgDir = dirname(thisFile);
+    while (true) {
+      const candidate = resolve(pkgDir, 'config.json');
+      if (existsSync(candidate)) return candidate;
+      const parent = resolve(pkgDir, '..');
+      if (parent === pkgDir || pkgDir === root) break;
+      pkgDir = parent;
+    }
+  } catch {
+    // import.meta.url unavailable — skip fallback
+  }
+
+  return null;
 }
 
 /**
