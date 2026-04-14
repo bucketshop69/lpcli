@@ -208,6 +208,32 @@ export async function cancelOrder(
   await c.postSigned('/orders/cancel', envelope);
 }
 
+/**
+ * Cancel a stop order (SL/TP) by order ID.
+ */
+export async function cancelStopOrder(
+  wallet: WalletService,
+  orderId: number,
+  symbol: string,
+  client?: PacificaClient,
+): Promise<void> {
+  const c = client ?? new PacificaClient();
+
+  const payload: Record<string, unknown> = {
+    symbol,
+    order_id: orderId,
+  };
+
+  const header = {
+    type: 'cancel_stop_order',
+    timestamp: Date.now(),
+    expiry_window: 5000,
+  };
+
+  const envelope = await signPacificaRequest(wallet, header, payload);
+  await c.postSigned('/orders/stop/cancel', envelope);
+}
+
 // ============================================================================
 // Cancel all orders
 // ============================================================================

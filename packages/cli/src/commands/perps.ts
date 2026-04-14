@@ -9,7 +9,7 @@
  *   lpcli perps withdraw <amount> [--yes]                  Withdraw USDC from Pacifica
  *   lpcli perps trade <symbol> <long|short> <size> [--yes] Place a market order
  *   lpcli perps close <symbol> [--yes]                     Close an open position
- *   lpcli perps cancel [--yes]                             Cancel all open orders
+ *   lpcli perps cancel [symbol] [--yes]                     Cancel open orders (filter by symbol)
  */
 
 import { createInterface } from 'node:readline';
@@ -20,6 +20,8 @@ import {
   requestWithdrawal,
   createMarketOrder,
   createLimitOrder,
+  cancelOrder,
+  cancelStopOrder,
   cancelAllOrders,
   closePosition,
   roundToLotSize,
@@ -36,6 +38,23 @@ import type { PacificaKlineInterval } from '@lpcli/core';
 
 function hasFlag(args: string[], flag: string): boolean {
   return args.includes(flag);
+}
+
+function isStopOrder(o: { order_type: string }): boolean {
+  const t = o.order_type.toLowerCase();
+  return t.includes('stop_loss') || t.includes('take_profit');
+}
+
+function formatOrder(o: { symbol: string; side: string; order_type: string; initial_amount?: string; amount?: string; price: string; stop_price?: string; reduce_only?: boolean }): string {
+  const side = o.side === 'bid' ? 'BUY' : 'SELL';
+  const type = o.order_type.toUpperCase();
+  const qty = o.initial_amount && o.initial_amount !== '0'
+    ? o.initial_amount
+    : o.amount && o.amount !== '0' ? o.amount : 'full';
+  const priceVal = o.stop_price && o.stop_price !== '0' ? o.stop_price : o.price;
+  const priceStr = priceVal && priceVal !== '0' ? `@ $${priceVal}` : '';
+  const reduceOnly = o.reduce_only ? ' (reduce-only)' : '';
+  return `${o.symbol} ${side} ${type} ${qty} ${priceStr}${reduceOnly}`.trim();
 }
 
 function ask(question: string): Promise<string> {
@@ -305,43 +324,54 @@ async function showPositions(): Promise<void> {
   const address = wallet.getPublicKey().toBase58();
   const client = new PacificaClient();
 
-  const [positions, prices] = await Promise.all([
+  const [positions, prices, orders] = await Promise.all([
     client.getPositions(address),
     client.getPrices(),
+    client.getOpenOrders(address),
   ]);
 
   if (positions.length === 0) {
     console.log('\nNo open positions.\n');
-    return;
+  } else {
+    const priceMap = new Map(prices.map((p) => [p.symbol, parseFloat(p.mark)]));
+
+    console.log(`\nOpen Positions (${positions.length}):`);
+    console.log('─'.repeat(70));
+
+    let totalPnl = 0;
+
+    for (const pos of positions) {
+      const side = pos.side === 'bid' ? 'LONG' : 'SHORT';
+      const size = parseFloat(pos.amount);
+      const entry = parseFloat(pos.entry_price);
+      const mark = priceMap.get(pos.symbol) ?? entry;
+      const direction = pos.side === 'bid' ? 1 : -1;
+      const pnl = (mark - entry) * size * direction;
+      const pnlPct = entry > 0 && size > 0 ? (pnl / (entry * size)) * 100 : 0;
+      totalPnl += pnl;
+
+      const pnlSign = pnl >= 0 ? '+' : '';
+      console.log(`  ${pos.symbol} ${side} ${size}`);
+      console.log(`    Entry: $${entry.toLocaleString()}  Mark: $${mark.toLocaleString()}`);
+      console.log(`    PnL: ${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`);
+    }
+
+    console.log('─'.repeat(70));
+    const totalSign = totalPnl >= 0 ? '+' : '';
+    console.log(`  Total PnL: ${totalSign}$${totalPnl.toFixed(2)}`);
+    console.log('');
   }
 
-  const priceMap = new Map(prices.map((p) => [p.symbol, parseFloat(p.mark)]));
-
-  console.log(`\nOpen Positions (${positions.length}):`);
-  console.log('─'.repeat(70));
-
-  let totalPnl = 0;
-
-  for (const pos of positions) {
-    const side = pos.side === 'bid' ? 'LONG' : 'SHORT';
-    const size = parseFloat(pos.amount);
-    const entry = parseFloat(pos.entry_price);
-    const mark = priceMap.get(pos.symbol) ?? entry;
-    const direction = pos.side === 'bid' ? 1 : -1;
-    const pnl = (mark - entry) * size * direction;
-    const pnlPct = entry > 0 && size > 0 ? (pnl / (entry * size)) * 100 : 0;
-    totalPnl += pnl;
-
-    const pnlSign = pnl >= 0 ? '+' : '';
-    console.log(`  ${pos.symbol} ${side} ${size}`);
-    console.log(`    Entry: $${entry.toLocaleString()}  Mark: $${mark.toLocaleString()}`);
-    console.log(`    PnL: ${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`);
+  // Show open orders if any
+  if (orders.length > 0) {
+    console.log(`Open Orders (${orders.length}):`);
+    console.log('─'.repeat(70));
+    for (const o of orders) {
+      console.log(`  ${formatOrder(o)}`);
+    }
+    console.log('─'.repeat(70));
+    console.log('');
   }
-
-  console.log('─'.repeat(70));
-  const totalSign = totalPnl >= 0 ? '+' : '';
-  console.log(`  Total PnL: ${totalSign}$${totalPnl.toFixed(2)}`);
-  console.log('');
 }
 
 async function showPosition(args: string[]): Promise<void> {
@@ -537,6 +567,7 @@ async function runClosePosition(args: string[]): Promise<void> {
 
 async function runCancel(args: string[]): Promise<void> {
   const autoConfirm = hasFlag(args, '--yes');
+  const symbol = args.find((a) => !a.startsWith('-'))?.toUpperCase();
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
@@ -544,29 +575,73 @@ async function runCancel(args: string[]): Promise<void> {
   const address = wallet.getPublicKey().toBase58();
 
   // Show current open orders
-  const orders = await client.getOpenOrders(address);
+  const allOrders = await client.getOpenOrders(address);
+  const orders = symbol
+    ? allOrders.filter((o) => o.symbol.toUpperCase() === symbol)
+    : allOrders;
+
   if (orders.length === 0) {
-    console.log('No open orders to cancel.');
+    console.log(symbol ? `No open orders for ${symbol}.` : 'No open orders to cancel.');
     return;
   }
 
-  console.log(`\nOpen Orders (${orders.length}):`);
-  for (const o of orders) {
-    const side = o.side === 'bid' ? 'BUY' : 'SELL';
-    console.log(`  ${o.order_id}: ${side} ${o.amount} ${o.symbol} @ $${o.price}`);
+  console.log(`\nOpen Orders${symbol ? ` for ${symbol}` : ''} (${orders.length}):`);
+  for (let i = 0; i < orders.length; i++) {
+    console.log(`  [${i + 1}] ${formatOrder(orders[i])}`);
   }
   console.log('');
 
-  if (!autoConfirm) {
-    const confirm = await ask(`Cancel all ${orders.length} order(s)? [y/N] `);
-    if (confirm.toLowerCase() !== 'y') {
-      console.log('Aborted.');
-      process.exit(0);
+  async function cancelSingleOrder(o: typeof orders[number]): Promise<void> {
+    if (isStopOrder(o)) {
+      await cancelStopOrder(wallet, o.order_id, o.symbol, client);
+    } else {
+      await cancelOrder(wallet, o.order_id, o.symbol, client);
     }
   }
 
-  await cancelAllOrders(wallet, client);
-  console.log(`Cancelled ${orders.length} order(s).`);
+  async function cancelMany(list: typeof orders): Promise<void> {
+    // If cancelling all orders with no symbol filter and no stop orders, use bulk endpoint
+    const hasStopOrders = list.some(isStopOrder);
+    if (!symbol && !hasStopOrders && list.length === orders.length) {
+      await cancelAllOrders(wallet, client);
+    } else {
+      for (const o of list) {
+        await cancelSingleOrder(o);
+      }
+    }
+  }
+
+  if (!autoConfirm) {
+    const answer = await ask(
+      `Cancel which orders? [a]ll, comma-separated numbers (e.g. 1,3), or [n]one: `,
+    );
+    const trimmed = answer.trim().toLowerCase();
+
+    if (trimmed === 'n' || trimmed === 'none' || trimmed === '') {
+      console.log('Aborted.');
+      process.exit(0);
+    }
+
+    if (trimmed === 'a' || trimmed === 'all') {
+      await cancelMany(orders);
+      console.log(`Cancelled ${orders.length} order(s)${symbol ? ` for ${symbol}` : ''}.`);
+    } else {
+      // Parse selected indices
+      const indices = trimmed.split(',').map((s) => parseInt(s.trim(), 10));
+      const invalid = indices.filter((i) => isNaN(i) || i < 1 || i > orders.length);
+      if (invalid.length > 0) {
+        console.error(`Invalid selection: ${invalid.join(', ')}. Expected 1-${orders.length}.`);
+        process.exit(1);
+      }
+      const selected = indices.map((i) => orders[i - 1]);
+      await cancelMany(selected);
+      console.log(`Cancelled ${selected.length} order(s).`);
+    }
+  } else {
+    await cancelMany(orders);
+    console.log(`Cancelled ${orders.length} order(s)${symbol ? ` for ${symbol}` : ''}.`);
+  }
+
   console.log('');
 }
 
@@ -997,7 +1072,7 @@ Usage:
   lpcli perps withdraw <amount>                   Withdraw USDC from Pacifica
   lpcli perps trade <symbol> <long|short> <size>  Place a market order
   lpcli perps close <symbol>                      Close an open position
-  lpcli perps cancel                              Cancel all open orders
+  lpcli perps cancel [symbol]                      Cancel open orders (optional symbol filter)
   lpcli perps limit <symbol> <long|short|close> [size] --price <p>    Limit order (server-side)
   lpcli perps limit <symbol> <long|short|close> [size] --rsi "<cond>" [--tf <tf>]  RSI conditional
   lpcli perps rsi <symbol> [timeframe]             RSI indicator (default 15m)

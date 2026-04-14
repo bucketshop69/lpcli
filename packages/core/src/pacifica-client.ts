@@ -71,13 +71,20 @@ export interface PacificaOrder {
   symbol: string;
   side: 'bid' | 'ask';
   price: string;
-  amount: string;
+  initial_amount: string;
+  amount?: string;
   filled_amount: string;
+  cancelled_amount?: string;
+  stop_price?: string;
   order_type: string;
-  tif: string;
+  stop_parent_order_id?: number | null;
+  trigger_price_type?: string;
+  tif?: string;
   reduce_only: boolean;
-  client_order_id: string;
+  instrument_type?: string;
+  client_order_id?: string | null;
   created_at: number;
+  updated_at?: number;
 }
 
 export interface PacificaKline {
