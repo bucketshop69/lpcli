@@ -40,6 +40,10 @@ export { MeteoraClient } from './client.js';
 export type { TokenBalance, WalletBalances, TransferResult } from './wallet.js';
 export { WalletService } from './wallet.js';
 
+// EVM Wallet
+export type { EvmSignResult, EvmSendResult } from './evm-wallet.js';
+export { EvmWalletService } from './evm-wallet.js';
+
 // DLMM
 export { DLMMService } from './dlmm.js';
 
@@ -92,6 +96,7 @@ export {
   createMarketOrder,
   createLimitOrder,
   cancelOrder,
+  cancelStopOrder,
   cancelAllOrders,
   closePosition,
   roundToLotSize,
@@ -105,6 +110,26 @@ export { calculateRSI, fetchRSI } from './pacifica-indicators.js';
 // Pacifica — TP/SL (signed REST requests)
 export type { TPSLParams } from './pacifica-tpsl.js';
 export { setPositionTPSL } from './pacifica-tpsl.js';
+
+// Polymarket — auth (VPS relay)
+export type { PolymarketAuthResult, PolymarketRelayConfig } from './polymarket-auth.js';
+export { polymarketAuth, getDeriveMessage } from './polymarket-auth.js';
+
+// Polymarket — deposit addresses (Bridge API)
+export type { PolymarketDepositAddresses } from './polymarket-deposit.js';
+export { getDepositAddresses, getDepositAddressesDirect } from './polymarket-deposit.js';
+
+// Polymarket — allowance & approval
+export type { AllowanceStatus, PolymarketAllowances, ApprovalResult } from './polymarket-approve.js';
+export { checkAllowances, approveViaRelay, POLYMARKET_SPENDERS } from './polymarket-approve.js';
+
+// Polymarket — order placement
+export type { PolymarketOrderParams, PolymarketOrderResult, PolymarketCancelResult } from './polymarket-order.js';
+export { placeOrder, getOpenOrders, cancelOrder as cancelPolymarketOrder, cancelAllOrders as cancelAllPolymarketOrders } from './polymarket-order.js';
+
+// Polymarket — positions & balance
+export type { PolymarketBalance, PolymarketPosition } from './polymarket-positions.js';
+export { getBalance as getPolymarketBalance, getPositions } from './polymarket-positions.js';
 
 // LPCLI
 export { LPCLI } from './lpcli.js';

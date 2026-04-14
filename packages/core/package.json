@@ -26,6 +26,12 @@
     "test:e2e:deposit": "node --import tsx --test tests/pacifica-deposit.e2e.ts",
     "test:e2e:trade": "node --import tsx --test tests/pacifica-trade.e2e.ts",
     "test:e2e:indicators": "node --import tsx --test tests/pacifica-indicators.e2e.ts",
+    "test:e2e:evm": "node --import tsx --test tests/evm-wallet.e2e.ts",
+    "test:e2e:polymarket-auth": "node --import tsx --test tests/polymarket-auth.e2e.ts",
+    "test:e2e:polymarket-deposit": "node --import tsx --test tests/polymarket-deposit.e2e.ts",
+    "test:e2e:polymarket-approve": "node --import tsx --test tests/polymarket-approve.e2e.ts",
+    "test:e2e:polymarket-order": "node --import tsx --test tests/polymarket-order.e2e.ts",
+    "test:e2e:polymarket-positions": "node --import tsx --test tests/polymarket-positions.e2e.ts",
     "dev": "node --import tsx --watch tests/core.e2e.ts"
   },
   "dependencies": {
