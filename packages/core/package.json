@@ -32,6 +32,8 @@
     "test:e2e:polymarket-approve": "node --import tsx --test tests/polymarket-approve.e2e.ts",
     "test:e2e:polymarket-order": "node --import tsx --test tests/polymarket-order.e2e.ts",
     "test:e2e:polymarket-positions": "node --import tsx --test tests/polymarket-positions.e2e.ts",
+    "test:e2e:polymarket-dome": "node --import tsx --test tests/polymarket-dome.e2e.ts",
+    "test:e2e:polymarket-clob": "node --import tsx --test tests/polymarket-clob.e2e.ts",
     "dev": "node --import tsx --watch tests/core.e2e.ts"
   },
   "dependencies": {

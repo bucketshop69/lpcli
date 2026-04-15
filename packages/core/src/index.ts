@@ -131,5 +131,30 @@ export { placeOrder, getOpenOrders, cancelOrder as cancelPolymarketOrder, cancel
 export type { PolymarketBalance, PolymarketPosition } from './polymarket-positions.js';
 export { getBalance as getPolymarketBalance, getPositions } from './polymarket-positions.js';
 
+// Polymarket — Dome API (market discovery)
+export type { DomeConfig, DomeMarket, DomeMarketSide, DomeMarketPrice, DomeSearchParams } from './polymarket-dome.js';
+export { searchMarkets, getMarketBySlug, getDomePrice, resolveMarket } from './polymarket-dome.js';
+
+// Polymarket — CLOB public API (orderbook, pricing, market info)
+export type {
+  ClobConfig,
+  OrderBookLevel,
+  OrderBook,
+  OrderBookSummary,
+  ClobRewardsConfig,
+  ClobRewardsRate,
+  ClobMarketToken,
+  ClobMarketInfo,
+} from './polymarket-clob.js';
+export {
+  getOrderBook,
+  getOrderBookSummary,
+  summarizeBook,
+  getMidpoint,
+  getLastTradePrice,
+  getClobMarketInfo,
+  clobConfigFromEnv,
+} from './polymarket-clob.js';
+
 // LPCLI
 export { LPCLI } from './lpcli.js';
