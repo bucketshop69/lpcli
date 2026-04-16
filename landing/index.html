@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="google" content="notranslate">
+<title>lpcli — DeFi from your terminal</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%230a0a0a'/><text x='10' y='68' font-family='monospace' font-size='48' font-weight='bold' fill='white'>$_</text></svg>">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: #050505;
+    font-family: 'JetBrains Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+  }
+
+  .hero {
+    text-align: center;
+    flex-shrink: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+
+  .hero-title {
+    font-size: 36px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 3px;
+  }
+
+  .hero-tagline {
+    font-size: 16px;
+    color: #555;
+  }
+
+  .hero-tagline .typed {
+    color: #888;
+    border-right: 2px solid #888;
+    padding-right: 2px;
+    display: inline-block;
+    min-width: 380px;
+    text-align: left;
+  }
+
+  .hero-tagline .typed a {
+    color: #888;
+    text-decoration: none;
+    border-bottom: 1px solid #333;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .hero-tagline .typed a:hover {
+    color: #fff;
+    border-color: #fff;
+  }
+
+  .terminal {
+    width: 60vw;
+    height: 75vh;
+    background: #0a0a0a;
+    border: 1px solid #222;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+
+  .titlebar {
+    display: flex;
+    align-items: center;
+    height: 36px;
+    background: #111;
+    border-bottom: 1px solid #222;
+    padding: 0 14px;
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  .titlebar-dots {
+    display: flex;
+    gap: 7px;
+  }
+
+  .titlebar-dots span {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+  }
+
+  .dot-r { background: #444; }
+  .dot-y { background: #333; }
+  .dot-g { background: #333; }
+
+  .titlebar-text {
+    flex: 1;
+    text-align: center;
+    font-size: 11px;
+    color: #555;
+    letter-spacing: 0.5px;
+  }
+
+  .body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 20px 24px;
+    overflow: hidden;
+    cursor: text;
+  }
+
+  .output {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+  }
+  .output::-webkit-scrollbar { display: none; }
+
+  .line {
+    line-height: 1.7;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .line.fade {
+    opacity: 0;
+    animation: fadeIn 0.05s forwards;
+  }
+
+  .line.prompt  { color: #555; }
+  .line.output  { color: #ccc; }
+  .line.dim     { color: #444; }
+  .line.bright  { color: #fff; }
+  .line.heading {
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .line.brand {
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 1px;
+  }
+  .line.table-header {
+    color: #666;
+    border-bottom: 1px solid #1a1a1a;
+    padding-bottom: 3px;
+    margin-bottom: 2px;
+  }
+  .line.highlight {
+    background: #151515;
+    padding: 2px 6px;
+    border-radius: 3px;
+    display: inline-block;
+    color: #fff;
+  }
+  .line.error { color: #888; }
+
+  @keyframes fadeIn {
+    to { opacity: 1; }
+  }
+
+  .input-line {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-shrink: 0;
+    line-height: 1.7;
+    font-size: 13px;
+    min-height: 22px;
+  }
+
+  .input-prompt {
+    color: #555;
+    flex-shrink: 0;
+    margin-right: 8px;
+  }
+
+  .input-text {
+    color: #fff;
+  }
+
+  .cursor {
+    color: #fff;
+    animation: blink 1s step-end infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  @media (max-width: 900px) {
+    .terminal { width: 95%; height: 90%; }
+    .body { padding: 12px; }
+    .line { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-title">lpcli</div>
+  <div class="hero-tagline">&mdash;&nbsp; <span class="typed" id="typed"></span></div>
+</div>
+
+<div class="terminal" id="terminal">
+  <div class="titlebar">
+    <div class="titlebar-dots">
+      <span class="dot-r"></span>
+      <span class="dot-y"></span>
+      <span class="dot-g"></span>
+    </div>
+    <div class="titlebar-text">lpcli &mdash; ~/defi</div>
+  </div>
+
+  <div class="body" id="body">
+    <div class="output" id="output"></div>
+    <div class="input-line" id="input-line">
+      <span class="input-prompt">$</span>
+      <span class="input-text" id="input-text"></span>
+      <span class="cursor">&#x2588;</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const scenes = {
+  'lpcli': [
+    { text: '', type: 'output' },
+    { text: '  lpcli', type: 'brand' },
+    { text: '  DeFi from your terminal.', type: 'heading' },
+    { text: '', type: 'output' },
+    { text: '  Your keys never leave your machine.', type: 'output' },
+    { text: '  Your compute is decentralized.', type: 'output' },
+    { text: '  Your trades are on-chain.', type: 'output' },
+    { text: '', type: 'output' },
+    { text: '  Try these commands:', type: 'dim' },
+    { text: '', type: 'output' },
+    { text: '  lpcli init               get a local encrypted wallet', type: 'output' },
+    { text: '  lpcli discover SOL       provide liquidity on Meteora', type: 'output' },
+    { text: '  lpcli perps trade        go long on SOL with leverage', type: 'output' },
+    { text: '  lpcli swap               swap any token via Jupiter', type: 'output' },
+    { text: '  lpcli predict            bet on the Premier League', type: 'output' },
+    { text: '  lpcli eliza              launch your own DeFi agent', type: 'output' },
+    { text: '', type: 'output' },
+    { text: '  Type a command to see it in action.', type: 'dim' },
+  ],
+  'lpcli init': [
+    { text: '', type: 'output' },
+    { text: '  Initializing wallet via Open Wallet Standard...', type: 'output' },
+    { text: '', type: 'output' },
+    { text: '  Generating BIP-39 mnemonic...          done', type: 'output' },
+    { text: '  Deriving Solana keypair (Ed25519)...   done', type: 'output' },
+    { text: '  Encrypting with AES-256-GCM...         done', type: 'output' },
+    { text: '  Writing to ~/.ows/wallets/...          done', type: 'output' },
+    { text: '', type: 'output' },
+    { text: '  \u2714 Wallet created', type: 'bright' },
+    { text: '', type: 'output' },
+    { text: '  Address:  7xKp...mQ9d', type: 'output' },
+    { text: '  Vault:    ~/.ows/wallets/<uuid>/wallet.json', type: 'dim' },
+    { text: '', type: 'output' },
+    { text: '  Under the hood:', type: 'dim' },
+    { text: '  Keys encrypted at rest (AES-256-GCM, scrypt KDF)', type: 'output' },
+    { text: '  Decrypted only for signing, then wiped from memory', type: 'output' },
+    { text: '  lpcli never sees raw key material', type: 'bright' },
+    { text: '', type: 'output' },
+    { text: '  Universal wallet \u2014 one mnemonic derives addresses', type: 'output' },
+    { text: '  for Solana, EVM, Bitcoin, Cosmos, Sui, and more.', type: 'output' },
+    { text: '', type: 'output' },
+    { text: '  Powered by OWS \u2014 openwallet.sh', type: 'dim' },
+  ],
+  'lpcli discover SOL': [
+    { text: '', type: 'output' },
+    { text: '  Scanning Meteora DLMM pools...', type: 'dim' },
+    { text: '', type: 'output' },
+    { text: '  POOL            FEE APR    24h VOL     BIN', type: 'table-header' },
+    { text: '  SOL-USDC        127.3%     $2.1M       1', type: 'output' },
+    { text: '  SOL-USDT         98.7%     $1.4M       2', type: 'output' },
+    { text: '  SOL-mSOL         64.2%     $890K       1', type: 'output' },
+    { text: '  SOL-JitoSOL      51.8%     $620K       3', type: 'output' },
+    { text: '', type: 'output' },
+    { text: '  $ lpcli open 5rZ...kQ --amount 200 --strategy spot', type: 'prompt' },
+    { text: '', type: 'output' },
+    { text: '  Auto-swapping USDC \u2192 SOL for balanced deposit...', type: 'dim' },
+    { text: '  Deploying across 12 bins around active price...', type: 'dim' },
+    { text: '', type: 'output' },
+    { text: '  \u2714 Position opened. 200 USDC deployed to SOL-USDC.', type: 'bright' },
+    { text: '  \u2714 Earning fees immediately.', type: 'bright' },
+  ],
+  'lpcli perps trade': [
+    { text: '', type: 'output' },
+    { text: '  Executing market order...', type: 'dim' },
+    { text: '', type: 'output' },
+    { text: '  \u2714 Long 0.5 SOL @ $148.23', type: 'bright' },
+    { text: '    Leverage:   5x', type: 'output' },
+    { text: '    Margin:     $14.82', type: 'output' },
+    { text: '    Notional:   $74.12', type: 'output' },
+    { text: '', type: 'output' },
+    { text: '  $ lpcli perps sl SOL 135', type: 'prompt' },
+    { text: '  \u2714 Stop-loss set at $135.00', type: 'bright' },
+    { text: '', type: 'output' },
+    { text: '  $ lpcli perps tp SOL 170', type: 'prompt' },
+    { text: '  \u2714 Take-profit set at $170.00', type: 'bright' },
+    { text: '', type: 'output' },
+    { text: '  $ lpcli perps limit SOL long 0.5 --rsi "<30"', type: 'prompt' },
+    { text: '  \u2714 Conditional order: buy when RSI < 30', type: 'bright' },
+  ],
+  'lpcli swap': [
+    { text: '', type: 'output' },
+    { text: '  Fetching best route via Jupiter...', type: 'dim' },
+    { text: '', type: 'output' },
+    { text: '  Route:    SOL \u2192 USDC', type: 'output' },
+    { text: '  Input:    2 SOL', type: 'output' },
+    { text: '  Output:   296.41 USDC', type: 'bright' },
+    { text: '  Price:    $148.21 / SOL', type: 'output' },
+    { text: '  Slippage: 0.1%', type: 'dim' },
+    { text: '  Via:      Raydium \u2192 Orca (split)', type: 'dim' },
+    { text: '', type: 'output' },
+    { text: '  Confirming...', type: 'dim' },
+    { text: '', type: 'output' },
+    { text: '  \u2714 Swap complete. 296.41 USDC received.', type: 'bright' },
+    { text: '    tx: 4sK...xQ7', type: 'dim' },
+  ],
+  'lpcli predict': [
+    { text: '', type: 'output' },
+    { text: '  ? Search market: Premier League', type: 'output' },
+    { text: '', type: 'output' },
+    { text: '  MARKET                          YES      NO', type: 'table-header' },
+    { text: '  Arsenal to win PL 24/25         $0.62    $0.38', type: 'output' },
+    { text: '  Liverpool to win PL 24/25       $0.24    $0.76', type: 'output' },
+    { text: '  Man City to win PL 24/25        $0.08    $0.92', type: 'output' },
+    { text: '  Chelsea top 4 finish            $0.71    $0.29', type: 'output' },
+    { text: '', type: 'output' },
+    { text: '  $ lpcli predict buy --market arsenal-win --side yes --amount 50', type: 'prompt' },
+    { text: '', type: 'output' },
+    { text: '  Placing order on Polymarket...', type: 'dim' },
+    { text: '', type: 'output' },
+    { text: '  \u2714 Bought 80.6 YES shares @ $0.62', type: 'bright' },
+    { text: '    Cost: $50.00  |  Payout if YES: $80.60', type: 'output' },
+  ],
+  'lpcli eliza': [
+    { text: '', type: 'output' },
+    { text: '  ? Pick GPU tier:', type: 'output' },
+    { text: '    \u276f Medium (A40 \u2014 $0.34/hr)', type: 'highlight' },
+    { text: '      Large  (A100 \u2014 $0.89/hr)', type: 'dim' },
+    { text: '', type: 'output' },
+    { text: '  Renting GPU on Nosana network...       done', type: 'output' },
+    { text: '  Deploying LLM container...              done', type: 'output' },
+    { text: '  Loading 17 DeFi tools...                done', type: 'output' },
+    { text: '', type: 'output' },
+    { text: '  \u2714 Agent live on decentralized compute.', type: 'bright' },
+    { text: '', type: 'output' },
+    { text: '  Agent:  What would you like to do?', type: 'output' },
+    { text: '  You:    Open a SOL-USDC position on Meteora', type: 'bright' },
+    { text: '', type: 'output' },
+    { text: '  Agent:  Found SOL-USDC pool \u2014 127% APR, $2.1M vol.', type: 'output' },
+    { text: '          Opening spot position with 200 USDC...', type: 'output' },
+    { text: '  \u2714 Done. Position live, earning fees.', type: 'bright' },
+    { text: '', type: 'output' },
+    { text: '  Your wallet. Decentralized GPU. On-chain trades.', type: 'output' },
+    { text: '  No browser. No custodian. Just a conversation.', type: 'dim' },
+  ],
+};
+
+// Aliases — fuzzy match user input to scene keys
+const aliases = {
+  'help': 'lpcli',
+  'lpcli help': 'lpcli',
+  'lpcli discover': 'lpcli discover SOL',
+  'discover': 'lpcli discover SOL',
+  'discover sol': 'lpcli discover SOL',
+  'init': 'lpcli init',
+  'perps': 'lpcli perps trade',
+  'lpcli perps': 'lpcli perps trade',
+  'perps trade': 'lpcli perps trade',
+  'swap': 'lpcli swap',
+  'predict': 'lpcli predict',
+  'eliza': 'lpcli eliza',
+  'lpcli agent': 'lpcli eliza',
+  'agent': 'lpcli eliza',
+};
+
+let inputBuffer = '';
+let history = [];
+let historyIndex = -1;
+let pendingTimers = [];
+let locked = false; // lock input while output animating
+
+const output = document.getElementById('output');
+const inputText = document.getElementById('input-text');
+
+function addLine(text, type, fade) {
+  const div = document.createElement('div');
+  div.className = 'line ' + type + (fade ? ' fade' : '');
+  div.textContent = text;
+  output.appendChild(div);
+  output.scrollTop = output.scrollHeight;
+}
+
+function clearPending() {
+  pendingTimers.forEach(t => clearTimeout(t));
+  pendingTimers = [];
+}
+
+function runCommand(cmd) {
+  const trimmed = cmd.trim();
+  if (!trimmed) return;
+
+  // Add prompt line to output
+  addLine('$ ' + trimmed, 'prompt', false);
+
+  // Push to history
+  history.push(trimmed);
+  historyIndex = history.length;
+
+  // Clear
+  if (trimmed === 'clear') {
+    output.innerHTML = '';
+    return;
+  }
+
+  // Resolve command
+  const lower = trimmed.toLowerCase();
+  let sceneKey = null;
+
+  // Direct match
+  if (scenes[trimmed]) {
+    sceneKey = trimmed;
+  } else if (scenes[lower]) {
+    sceneKey = lower;
+  } else if (aliases[lower]) {
+    sceneKey = aliases[lower];
+  }
+
+  if (!sceneKey) {
+    addLine('  command not found: ' + trimmed, 'error', true);
+    addLine('  type "lpcli" to see available commands.', 'dim', true);
+    return;
+  }
+
+  // Render scene lines with stagger
+  const lines = scenes[sceneKey];
+  locked = true;
+
+  lines.forEach((line, i) => {
+    const t = setTimeout(() => {
+      addLine(line.text, line.type, true);
+      if (i === lines.length - 1) {
+        locked = false;
+      }
+    }, i * 40);
+    pendingTimers.push(t);
+  });
+}
+
+// Keyboard handler — capture all typing
+document.addEventListener('keydown', (e) => {
+  // Ctrl+C — cancel animation, clear input
+  if (e.key === 'c' && e.ctrlKey) {
+    e.preventDefault();
+    clearPending();
+    locked = false;
+    if (inputBuffer.length > 0) {
+      addLine('$ ' + inputBuffer + '^C', 'prompt', false);
+      inputBuffer = '';
+      inputText.textContent = '';
+    }
+    return;
+  }
+
+  // Ctrl+L — clear screen
+  if (e.key === 'l' && e.ctrlKey) {
+    e.preventDefault();
+    clearPending();
+    locked = false;
+    output.innerHTML = '';
+    return;
+  }
+
+  if (locked) return;
+
+  // Enter — execute
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const cmd = inputBuffer;
+    inputBuffer = '';
+    inputText.textContent = '';
+    runCommand(cmd);
+    return;
+  }
+
+  // Backspace
+  if (e.key === 'Backspace') {
+    e.preventDefault();
+    inputBuffer = inputBuffer.slice(0, -1);
+    inputText.textContent = inputBuffer;
+    return;
+  }
+
+  // Arrow up — history back
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (history.length > 0 && historyIndex > 0) {
+      historyIndex--;
+      inputBuffer = history[historyIndex];
+      inputText.textContent = inputBuffer;
+    }
+    return;
+  }
+
+  // Arrow down — history forward
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (historyIndex < history.length - 1) {
+      historyIndex++;
+      inputBuffer = history[historyIndex];
+      inputText.textContent = inputBuffer;
+    } else {
+      historyIndex = history.length;
+      inputBuffer = '';
+      inputText.textContent = '';
+    }
+    return;
+  }
+
+  // Tab — autocomplete
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const lower = inputBuffer.toLowerCase();
+    const allCmds = Object.keys(scenes).concat(Object.keys(aliases)).concat(['clear']);
+    const match = allCmds.find(c => c.startsWith(lower) && c !== lower);
+    if (match) {
+      inputBuffer = match;
+      inputText.textContent = inputBuffer;
+    }
+    return;
+  }
+
+  // Ignore modifier keys, function keys, etc
+  if (e.key.length > 1) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+  // Type character
+  e.preventDefault();
+  inputBuffer += e.key;
+  inputText.textContent = inputBuffer;
+});
+
+// Click terminal body to focus
+document.getElementById('body').addEventListener('click', () => {
+  // Just ensures keydown listener works (it's on document, always active)
+});
+
+// Boot — auto-run lpcli on load
+runCommand('lpcli');
+
+// Typewriter tagline rotation
+// Each phrase has plain text for typing + final HTML with link
+const phrases = [
+  {
+    plain: 'wallet is local (@OpenWallet)',
+    html: 'wallet is local (<a href="https://x.com/OpenWallet" target="_blank">@OpenWallet</a>)',
+  },
+  {
+    plain: 'compute is decentralized (@nosana_ai)',
+    html: 'compute is decentralized (<a href="https://x.com/nosana_ai" target="_blank">@nosana_ai</a>)',
+  },
+  {
+    plain: 'trading is on-chain (@solana)',
+    html: 'trading is on-chain (<a href="https://x.com/solana" target="_blank">@solana</a>)',
+  },
+  {
+    plain: 'no centralized dependency anywhere',
+    html: 'no centralized dependency anywhere',
+  },
+];
+
+const typedEl = document.getElementById('typed');
+let phraseIdx = 0;
+
+function typeErase() {
+  const phrase = phrases[phraseIdx];
+  let charIdx = 0;
+
+  function typeForward() {
+    if (charIdx <= phrase.plain.length) {
+      typedEl.textContent = phrase.plain.slice(0, charIdx);
+      charIdx++;
+      setTimeout(typeForward, 60 + Math.random() * 30);
+    } else {
+      // Replace with HTML version (clickable links)
+      typedEl.innerHTML = phrase.html;
+      setTimeout(eraseBack, 2000);
+    }
+  }
+
+  function eraseBack() {
+    if (charIdx > 0) {
+      charIdx--;
+      typedEl.textContent = phrase.plain.slice(0, charIdx);
+      setTimeout(eraseBack, 30 + Math.random() * 20);
+    } else {
+      phraseIdx = (phraseIdx + 1) % phrases.length;
+      setTimeout(typeErase, 400);
+    }
+  }
+
+  typeForward();
+}
+
+typeErase();
+</script>
+
+</body>
+</html>
