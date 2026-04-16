@@ -7,31 +7,22 @@
  */
 
 import { LPCLI, type Position } from '@lpcli/core';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function getFlag(args: string[], flag: string): string | undefined {
-  const i = args.indexOf(flag);
-  return i !== -1 ? args[i + 1] : undefined;
-}
-
-function formatStatus(s: Position['status']): string {
-  if (s === 'in_range') return 'IN RANGE';
-  if (s === 'out_of_range_above') return 'OUT (above)';
-  if (s === 'out_of_range_below') return 'OUT (below)';
-  return 'CLOSED';
-}
+import { getFlag, formatStatus, shortAddr } from '../helpers.js';
 
 // ---------------------------------------------------------------------------
 // Rich list view
 // ---------------------------------------------------------------------------
 
+function tokenSymbols(p: Position): [string, string] {
+  const parts = p.pool_name.split('-');
+  return parts.length >= 2 ? [parts[0], parts.slice(1).join('-')] : [shortAddr(p.token_x_mint), shortAddr(p.token_y_mint)];
+}
+
 function renderList(positions: Position[]): void {
   console.log();
   for (let i = 0; i < positions.length; i++) {
     const p = positions[i];
+    const [symX, symY] = tokenSymbols(p);
     const status = formatStatus(p.status);
     const valX = p.current_value_x_ui.toFixed(4);
     const valY = p.current_value_y_ui.toFixed(4);
@@ -41,8 +32,8 @@ function renderList(positions: Position[]): void {
     console.log(`  [${i + 1}] ${p.pool_name}  |  ${status}`);
     console.log(`      Position:  ${p.address}`);
     console.log(`      Pool:      ${p.pool}`);
-    console.log(`      Value:     ${valX} X  +  ${valY} Y`);
-    console.log(`      Fees:      ${feeX} X  +  ${feeY} Y`);
+    console.log(`      Value:     ${valX} ${symX}  +  ${valY} ${symY}`);
+    console.log(`      Fees:      ${feeX} ${symX}  +  ${feeY} ${symY}`);
     console.log(`      Range:     ${p.range_low.toFixed(6)} — ${p.range_high.toFixed(6)}  (${p.total_bins} bins, ${p.bin_step} bps)`);
     console.log(`      Price:     ${p.current_price.toFixed(6)}`);
     console.log();
@@ -54,31 +45,26 @@ function renderList(positions: Position[]): void {
 // ---------------------------------------------------------------------------
 
 function renderDetail(p: Position): void {
+  const [symX, symY] = tokenSymbols(p);
   console.log(`
 Position Detail
 ===============
 
-  Address:       ${p.address}
-  Pool:          ${p.pool}
-  Pool name:     ${p.pool_name}
+  Pool:          ${p.pool_name}
   Status:        ${formatStatus(p.status)}
 
-  Token X mint:  ${p.token_x_mint}
-  Token Y mint:  ${p.token_y_mint}
-  Token X dec:   ${p.token_x_decimals}
-  Token Y dec:   ${p.token_y_decimals}
+  Position addr: ${p.address}
+  Pool addr:     ${p.pool}
+  Token X:       ${symX}  (${p.token_x_mint})
+  Token Y:       ${symY}  (${p.token_y_mint})
 
   Current Value
-    X (raw):     ${p.current_value_x}
-    X (UI):      ${p.current_value_x_ui.toFixed(6)}
-    Y (raw):     ${p.current_value_y}
-    Y (UI):      ${p.current_value_y_ui.toFixed(6)}
+    ${symX}:     ${p.current_value_x_ui.toFixed(6)}
+    ${symY}:     ${p.current_value_y_ui.toFixed(6)}
 
   Unclaimed Fees
-    X (raw):     ${p.fees_earned_x}
-    X (UI):      ${p.fees_earned_x_ui.toFixed(6)}
-    Y (raw):     ${p.fees_earned_y}
-    Y (UI):      ${p.fees_earned_y_ui.toFixed(6)}
+    ${symX}:     ${p.fees_earned_x_ui.toFixed(6)}
+    ${symY}:     ${p.fees_earned_y_ui.toFixed(6)}
 
   Price Range
     Low:         ${p.range_low.toFixed(6)}

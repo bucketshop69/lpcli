@@ -35,6 +35,8 @@ export interface LPCLIConfig {
   fundingToken: FundingToken;
   /** SOL reserved for transaction fees (in SOL, e.g. 0.02). Never swapped away. */
   feeReserveSol: number;
+  /** Discover command configuration — gates, sort, page size. */
+  discover?: Partial<import('./types.js').DiscoverConfig>;
 }
 
 // ============================================================================

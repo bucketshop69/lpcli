@@ -1,8 +1,15 @@
 // ============================================================================
 // Scoring Engine — @lpcli/core
+//
+// LEGACY: Discover now uses pool-discovery API native metrics.
+// This module is kept for backwards compat with any external callers.
 // ============================================================================
 
-import type { MeteoraPoolRaw, ScoredPool, ScoringWeights } from './types.js';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MeteoraPoolRaw = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ScoredPool = any;
+import type { ScoringWeights } from './types.js';
 
 const TVL_GATE = 10_000; // $10K minimum TVL to be considered
 

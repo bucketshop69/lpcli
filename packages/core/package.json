@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test tests/wallet.unit.ts",
     "test:e2e": "node --import tsx --test tests/core.e2e.ts",
+    "test:e2e:discover": "node --import tsx --test tests/meteora-discover.e2e.ts",
     "test:e2e:funding": "node --import tsx --test tests/funding.e2e.ts",
     "test:e2e:swap": "node --import tsx --test tests/swap.e2e.ts",
     "test:e2e:open": "node --import tsx --test tests/open.e2e.ts",

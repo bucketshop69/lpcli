@@ -1,41 +1,21 @@
 /**
- * `lpcli claim <position>` — claim swap fees and convert to funding token.
+ * `lpcli meteora claim <position>` — claim swap fees and convert to funding token.
  *
  * Usage:
- *   lpcli claim <position_address> --pool <pool_address>
+ *   lpcli meteora claim <position_address>
  *     Claims fees, then swaps any non-funding tokens back to funding token.
- *     SOL fee reserve (from config feeReserveSol) is preserved.
+ *     Pool is auto-detected from the position.
  *
- *   lpcli claim <position_address> --pool <pool_address> --no-swap
+ *   lpcli meteora claim <position_address> --pool <pool_address>
+ *     Explicit pool (skips auto-detect lookup).
+ *
+ *   lpcli meteora claim <position_address> --no-swap
  *     Claim without swapping (fee tokens stay as-is in wallet).
  */
 
-import { createInterface } from 'node:readline';
 import { LPCLI } from '@lpcli/core';
 import type { FundedClaimResult } from '@lpcli/core';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function getFlag(args: string[], flag: string): string | undefined {
-  const i = args.indexOf(flag);
-  return i !== -1 ? args[i + 1] : undefined;
-}
-
-function hasFlag(args: string[], flag: string): boolean {
-  return args.includes(flag);
-}
-
-function createRL() {
-  return createInterface({ input: process.stdin, output: process.stdout });
-}
-
-function ask(rl: ReturnType<typeof createRL>, question: string): Promise<string> {
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => resolve(answer.trim()));
-  });
-}
+import { getFlag, hasFlag, createRL, ask, solscanTxUrl } from '../helpers.js';
 
 // ---------------------------------------------------------------------------
 // Command entrypoint
@@ -44,16 +24,11 @@ function ask(rl: ReturnType<typeof createRL>, question: string): Promise<string>
 export async function runClaim(args: string[]): Promise<void> {
   const positionAddress = args[0];
   if (!positionAddress) {
-    console.error('Usage: lpcli claim <position_address> --pool <pool_address> [--no-swap]');
+    console.error('Usage: lpcli meteora claim <position_address> [--pool <pool_address>] [--no-swap]');
     process.exit(1);
   }
 
   const pool = getFlag(args, '--pool');
-  if (!pool) {
-    console.error('--pool <pool_address> is required to resolve token mints for swap-back.');
-    process.exit(1);
-  }
-
   const noSwap = hasFlag(args, '--no-swap');
 
   const lpcli = new LPCLI();
@@ -71,7 +46,7 @@ export async function runClaim(args: string[]): Promise<void> {
   const rl = createRL();
   console.log(`
 Claim fees from position: ${positionAddress}
-  Pool:           ${pool}
+  Pool:           ${pool ?? '(auto-detect from position)'}
   Swap back to:   ${noSwap ? '(none — tokens stay in wallet)' : `${funding.symbol} (${funding.mint.slice(0, 8)}...)`}
   SOL fee reserve: ${lpcli.config.feeReserveSol} SOL
 `);
@@ -106,7 +81,7 @@ Fees claimed successfully!
 
   Claimed X: ${result.claimedX}
   Claimed Y: ${result.claimedY}
-  TX:        ${result.tx}
+  TX:        ${solscanTxUrl(result.tx)}
 `);
     return;
   }
@@ -117,7 +92,7 @@ Fees claimed successfully!
 
   let result: FundedClaimResult;
   try {
-    result = await lpcli.claimToFunding(positionAddress, pool);
+    result = await lpcli.claimToFunding(positionAddress, pool ?? undefined);
   } catch (err: unknown) {
     console.error('Failed:', err instanceof Error ? err.message : String(err));
     process.exit(1);
@@ -133,12 +108,13 @@ Fees claimed successfully!
 
   Claimed X:  ${result.claim.claimedX}
   Claimed Y:  ${result.claim.claimedY}
-  Claim TX:   ${result.claim.tx}
+  Claim TX:   ${solscanTxUrl(result.claim.tx)}
   Swap-back:  ${result.swaps.length} swap(s) executed
 `);
 
   for (const swap of result.swaps) {
-    console.log(`    ${swap.inAmount} → ${swap.outAmount} (sig: ${swap.signature})`);
+    console.log(`    ${swap.inAmount} → ${swap.outAmount}`);
+    console.log(`    ${solscanTxUrl(swap.signature)}`);
   }
 
   console.log();

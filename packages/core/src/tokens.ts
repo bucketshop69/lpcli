@@ -18,6 +18,12 @@ import { homedir } from 'node:os';
 export interface TokenInfo {
   symbol: string;
   name: string;
+  /** Token decimals (e.g. 9 for SOL, 6 for USDC). */
+  decimals?: number;
+  /** Whether the token is verified on Meteora / Jupiter. */
+  verified?: boolean;
+  /** Unix ms when this entry was last updated. */
+  updatedAt?: number;
 }
 
 // ============================================================================
@@ -166,6 +172,50 @@ export class TokenRegistry {
   async get(mint: string): Promise<TokenInfo> {
     const map = await this.resolve([mint]);
     return map.get(mint)!;
+  }
+
+  /**
+   * Get a single token's info from cache only (sync, no RPC).
+   * Returns undefined if not cached.
+   */
+  getCached(mint: string): TokenInfo | undefined {
+    return this._memory.get(mint);
+  }
+
+  /**
+   * Populate cache from Meteora API token objects.
+   * Call this after any API response that includes token data.
+   * Only caches stable fields (symbol, name, decimals, verified) — not price.
+   */
+  populateFromApi(tokens: { address: string; symbol: string; name: string; decimals: number; is_verified: boolean }[]): void {
+    let dirty = false;
+
+    for (const t of tokens) {
+      // Skip tokens with empty/missing symbol — don't poison cache
+      if (!t.symbol) continue;
+
+      const existing = this._memory.get(t.address);
+      // Skip if already cached with same data
+      if (existing?.symbol === t.symbol && existing?.decimals === t.decimals && existing?.verified === t.is_verified) {
+        continue;
+      }
+
+      const info: TokenInfo = {
+        symbol: t.symbol,
+        name: t.name || t.symbol,
+        decimals: t.decimals,
+        verified: t.is_verified,
+        updatedAt: Date.now(),
+      };
+
+      this._memory.set(t.address, info);
+      this._disk.set(t.address, info);
+      dirty = true;
+    }
+
+    if (dirty) {
+      saveDiskCache(this._disk);
+    }
   }
 
   /**

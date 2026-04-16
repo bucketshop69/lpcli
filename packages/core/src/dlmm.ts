@@ -20,6 +20,7 @@ import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js';
 import type { OpenPositionResult, ClosePositionResult, Position, PoolMeta } from './types.js';
 import { NetworkError, TransactionError } from './errors.js';
 import type { WalletService } from './wallet.js';
+import type { TokenRegistry } from './tokens.js';
 
 // ============================================================================
 // SDK lazy loader
@@ -127,6 +128,8 @@ export interface DLMMServiceOptions {
   readRpcUrl?: string;
   wallet: WalletService;
   cluster: 'mainnet' | 'devnet';
+  /** Token registry for resolving symbols. If omitted, mints are truncated. */
+  tokenRegistry?: TokenRegistry;
 }
 
 /** Map our config cluster names to what the DLMM SDK expects. */
@@ -643,7 +646,13 @@ export class DLMMService {
   // Claim fees
   // --------------------------------------------------------------------------
 
-  async claimFees(positionAddress: string): Promise<{ claimedX: number; claimedY: number; tx: string }> {
+  /** Resolve the pool address for a given position (uses cached pools first, then global search). */
+  async resolvePoolForPosition(positionAddress: string): Promise<string> {
+    const { positionInfo } = await this._findPosition(positionAddress);
+    return positionInfo.publicKey.toBase58();
+  }
+
+  async claimFees(positionAddress: string): Promise<{ claimedX: number; claimedY: number; tx: string; pool: string }> {
     const wallet = this._options.wallet;
     const userPubKey = wallet.getPublicKey();
 
@@ -666,10 +675,10 @@ export class DLMMService {
     );
 
     if (signatures.length === 0) {
-      return { claimedX: 0, claimedY: 0, tx: '' };
+      return { claimedX: 0, claimedY: 0, tx: '', pool: poolAddress };
     }
 
-    return { claimedX, claimedY, tx: signatures[signatures.length - 1] };
+    return { claimedX, claimedY, tx: signatures[signatures.length - 1], pool: poolAddress };
   }
 
   // --------------------------------------------------------------------------
@@ -740,6 +749,17 @@ export class DLMMService {
 
     if (allPositions.size === 0) return [];
 
+    // Batch-resolve token symbols via registry (single RPC round-trip for unknowns)
+    const registry = this._options.tokenRegistry;
+    if (registry) {
+      const mints = new Set<string>();
+      for (const info of allPositions.values()) {
+        mints.add(info.tokenX.mint.address.toBase58());
+        mints.add(info.tokenY.mint.address.toBase58());
+      }
+      await registry.resolve([...mints]);
+    }
+
     const results: Position[] = [];
 
     for (const [lbPairAddress, info] of allPositions) {
@@ -750,8 +770,8 @@ export class DLMMService {
       const tokenXMint = info.tokenX.mint.address.toBase58();
       const tokenYMint = info.tokenY.mint.address.toBase58();
 
-      const tokenXSymbol = tokenXMint.slice(0, 4);
-      const tokenYSymbol = tokenYMint.slice(0, 4);
+      const tokenXSymbol = (registry?.getCached(tokenXMint)?.symbol ?? tokenXMint.slice(0, 6)).toUpperCase();
+      const tokenYSymbol = (registry?.getCached(tokenYMint)?.symbol ?? tokenYMint.slice(0, 6)).toUpperCase();
       const poolName = `${tokenXSymbol}-${tokenYSymbol}`;
 
       for (const lbPos of info.lbPairPositionsData) {

@@ -15,17 +15,20 @@
  */
 
 import { runInit }      from './commands/init.js';
+import { runMeteora }   from './commands/meteora.js';
+import { runWallet }    from './commands/wallet.js';
+import { runPerps }     from './commands/perps.js';
+import { runPredict }   from './commands/predict.js';
+import { runEliza }     from './commands/eliza.js';
+
+// Legacy direct imports — kept for backwards compat during migration
 import { runDiscover }  from './commands/discover.js';
 import { runPool }      from './commands/pool.js';
 import { runPositions } from './commands/positions.js';
 import { runOpen }      from './commands/open.js';
 import { runClose }     from './commands/close.js';
 import { runClaim }     from './commands/claim.js';
-import { runWallet }    from './commands/wallet.js';
 import { runSwap }      from './commands/swap.js';
-import { runPerps }     from './commands/perps.js';
-import { runPredict }   from './commands/predict.js';
-import { runEliza }     from './commands/eliza.js';
 
 const [, , command, ...args] = process.argv;
 
@@ -35,36 +38,12 @@ async function main(): Promise<void> {
       await runInit(args);
       break;
 
-    case 'discover':
-      await runDiscover(args);
-      break;
-
-    case 'pool':
-      await runPool(args);
-      break;
-
-    case 'positions':
-      await runPositions(args);
-      break;
-
-    case 'open':
-      await runOpen(args);
-      break;
-
-    case 'close':
-      await runClose(args);
-      break;
-
-    case 'claim':
-      await runClaim(args);
+    case 'meteora':
+      await runMeteora(args);
       break;
 
     case 'wallet':
       await runWallet(args);
-      break;
-
-    case 'swap':
-      await runSwap(args);
       break;
 
     case 'perps':
@@ -77,6 +56,29 @@ async function main(): Promise<void> {
 
     case 'eliza':
       await runEliza(args);
+      break;
+
+    // Legacy — direct Meteora commands (backwards compat)
+    case 'discover':
+      await runDiscover(args);
+      break;
+    case 'pool':
+      await runPool(args);
+      break;
+    case 'positions':
+      await runPositions(args);
+      break;
+    case 'open':
+      await runOpen(args);
+      break;
+    case 'close':
+      await runClose(args);
+      break;
+    case 'claim':
+      await runClaim(args);
+      break;
+    case 'swap':
+      await runSwap(args);
       break;
 
     case undefined:
@@ -94,37 +96,23 @@ async function main(): Promise<void> {
 
 function printHelp(): void {
   console.log(`
-lpcli — Meteora DLMM liquidity manager
+lpcli — DeFi terminal for Meteora, Pacifica, and Polymarket
 
 Usage:
   lpcli init                   Interactive wallet and config setup
-  lpcli init --force           Non-interactive setup (for agents)
-  lpcli discover <token>       Find and rank pools for a token pair
-  lpcli pool <address>         Show pool details
-  lpcli positions              List your open positions
-  lpcli open <pool>            Open a new liquidity position
-  lpcli close <position>       Close a position and claim fees
-  lpcli claim <position>       Claim fees without closing
-  lpcli wallet                 Show wallet address + balances
-  lpcli wallet address         Just the address (scriptable)
-  lpcli wallet balance         SOL + all SPL token balances
-  lpcli wallet transfer        Send SOL or tokens to an address
-  lpcli swap                   Swap tokens via Jupiter Ultra API
-  lpcli perps                  Pacifica perpetuals (balance, deposit, withdraw)
+  lpcli meteora                Meteora DLMM (discover, open, close, swap, ...)
+  lpcli wallet                 Wallet operations (balance, transfer)
+  lpcli perps                  Pacifica perpetuals
   lpcli predict                Polymarket prediction markets
-  lpcli eliza                  Start conversational DeFi agent (Nosana GPU)
-  lpcli eliza --local          Start agent with local Ollama
+  lpcli eliza                  Conversational DeFi agent
 
-Options:
-  --help, -h                   Show this help
+Quick start:
+  lpcli meteora discover       Top pools by fee efficiency
+  lpcli meteora discover SOL   SOL pools
+  lpcli meteora open <pool>    Open a liquidity position
+  lpcli meteora positions      View open positions
 
-Environment:
-  HELIUS_RPC_URL               Helius RPC endpoint
-  OWS_WALLET                   OWS wallet name (default: lpcli)
-  CLUSTER                      mainnet | devnet (default: mainnet)
-  FUNDING_TOKEN_MINT           Override funding token mint address
-
-Config: ./config.json (project root)
+Run 'lpcli <command> --help' for command-specific usage.
 `);
 }
 

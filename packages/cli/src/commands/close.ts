@@ -13,39 +13,9 @@
  *     Direct close (legacy / scripting mode).
  */
 
-import { createInterface } from 'node:readline';
 import { LPCLI } from '@lpcli/core';
 import type { Position, FundedCloseResult, ClosePositionResult } from '@lpcli/core';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function getFlag(args: string[], flag: string): string | undefined {
-  const i = args.indexOf(flag);
-  return i !== -1 ? args[i + 1] : undefined;
-}
-
-function hasFlag(args: string[], flag: string): boolean {
-  return args.includes(flag);
-}
-
-function createRL() {
-  return createInterface({ input: process.stdin, output: process.stdout });
-}
-
-function ask(rl: ReturnType<typeof createRL>, question: string): Promise<string> {
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => resolve(answer.trim()));
-  });
-}
-
-function formatStatus(s: Position['status']): string {
-  if (s === 'in_range') return 'IN RANGE';
-  if (s === 'out_of_range_above') return 'OUT (above)';
-  if (s === 'out_of_range_below') return 'OUT (below)';
-  return 'CLOSED';
-}
+import { getFlag, hasFlag, createRL, ask, formatStatus, solscanTxUrl, shortAddr } from '../helpers.js';
 
 // ---------------------------------------------------------------------------
 // Display positions table
@@ -77,7 +47,7 @@ Position closed!
   Withdrawn Y:    ${result.withdrawn_y}
   Claimed fees X: ${result.claimed_fees_x}
   Claimed fees Y: ${result.claimed_fees_y}
-  TX:             ${result.tx}
+  TX:             ${solscanTxUrl(result.tx)}
 `);
 }
 
@@ -89,12 +59,13 @@ Position closed!
   Withdrawn Y:    ${result.close.withdrawn_y}
   Claimed fees X: ${result.close.claimed_fees_x}
   Claimed fees Y: ${result.close.claimed_fees_y}
-  Close TX:       ${result.close.tx}
+  Close TX:       ${solscanTxUrl(result.close.tx)}
   Swap-back:      ${result.swaps.length} swap(s) executed
 `);
 
   for (const swap of result.swaps) {
-    console.log(`    ${swap.inAmount} → ${swap.outAmount} (sig: ${swap.signature})`);
+    console.log(`    ${swap.inAmount} → ${swap.outAmount}`);
+    console.log(`    ${solscanTxUrl(swap.signature)}`);
   }
 
   console.log();
@@ -126,12 +97,7 @@ export async function runClose(args: string[]): Promise<void> {
 
   if (looksLikeAddress) {
     const positionAddress = firstArg;
-    const pool = getFlag(args, '--pool');
-    if (!pool) {
-      console.error('Direct mode requires --pool <pool_address>.');
-      console.error('Or run `lpcli close` without args for interactive mode.');
-      process.exit(1);
-    }
+    const pool = getFlag(args, '--pool') ?? await dlmm.resolvePoolForPosition(positionAddress);
     await executeClose(lpcli, positionAddress, pool, noSwap, funding.symbol);
     return;
   }

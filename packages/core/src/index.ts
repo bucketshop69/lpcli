@@ -8,7 +8,9 @@ export { loadConfig, SOL_MINT, LAMPORTS_PER_SOL, POSITION_RENT_LAMPORTS, DEFAULT
 
 // Types
 export type {
+  MeteoraTokenInfo,
   MeteoraPoolRaw,
+  DiscoveredPool,
   ScoredPool,
   Position,
   PoolInfo,
@@ -22,6 +24,7 @@ export type {
   MeteoraClientOptions,
   ScoringWeights,
   ReadinessStatus,
+  DiscoverConfig,
 } from './types.js';
 
 // DLMMServiceOptions lives in dlmm.ts (it references WalletService)
@@ -30,11 +33,11 @@ export type { DLMMServiceOptions } from './dlmm.js';
 // Errors
 export { NetworkError, TransactionError } from './errors.js';
 
-// Scoring
+// Scoring (legacy — discover now uses API-native metrics)
 export { rankPools } from './scoring.js';
 
 // Client
-export { MeteoraClient } from './client.js';
+export { MeteoraClient, DEFAULT_DISCOVER_CONFIG } from './client.js';
 
 // Wallet
 export type { TokenBalance, WalletBalances, TransferResult } from './wallet.js';

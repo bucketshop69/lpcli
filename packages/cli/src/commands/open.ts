@@ -17,32 +17,9 @@
  * to skip the auto-swap and deposit exact amounts.
  */
 
-import { createInterface } from 'node:readline';
 import { LPCLI } from '@lpcli/core';
 import type { FundedOpenResult, OpenPositionResult } from '@lpcli/core';
-
-// ---------------------------------------------------------------------------
-// Arg parsing helpers
-// ---------------------------------------------------------------------------
-
-function getFlag(args: string[], flag: string): string | undefined {
-  const i = args.indexOf(flag);
-  return i !== -1 ? args[i + 1] : undefined;
-}
-
-// ---------------------------------------------------------------------------
-// Readline confirm prompt
-// ---------------------------------------------------------------------------
-
-function createRL() {
-  return createInterface({ input: process.stdin, output: process.stdout });
-}
-
-function ask(rl: ReturnType<typeof createRL>, question: string): Promise<string> {
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => resolve(answer.trim()));
-  });
-}
+import { getFlag, createRL, ask, solscanTxUrl } from '../helpers.js';
 
 // ---------------------------------------------------------------------------
 // Command entrypoint
@@ -150,7 +127,7 @@ Position opened successfully!
   Range:       ${result.position.range_low.toFixed(6)} — ${result.position.range_high.toFixed(6)}
   Deposited X: ${result.position.deposited_x}
   Deposited Y: ${result.position.deposited_y}
-  TX:          ${result.position.tx}
+  TX:          ${solscanTxUrl(result.position.tx)}
   Swaps:       ${result.swaps.length} swap(s) executed
 `);
     return;
@@ -211,6 +188,6 @@ Position opened successfully!
   Range:       ${result.range_low.toFixed(6)} — ${result.range_high.toFixed(6)}
   Deposited X: ${result.deposited_x} (raw)
   Deposited Y: ${result.deposited_y} (raw)
-  TX:          ${result.tx}
+  TX:          ${solscanTxUrl(result.tx)}
 `);
 }
