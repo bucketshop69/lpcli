@@ -24,18 +24,7 @@ import {
 } from '@lpcli/core';
 import type { WalletService, WalletBalances } from '@lpcli/core';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function getFlag(args: string[], flag: string): string | undefined {
-  const i = args.indexOf(flag);
-  return i !== -1 ? args[i + 1] : undefined;
-}
-
-function hasFlag(args: string[], flag: string): boolean {
-  return args.includes(flag);
-}
+import { getFlag, hasFlag, solscanTxUrl } from '../helpers.js';
 
 function resolveMint(input: string): string {
   const upper = input.toUpperCase();
@@ -220,15 +209,12 @@ async function runInteractive(wallet: WalletService): Promise<void> {
 
     execSpinner.stop(`Swap complete!`);
 
-    const solscanUrl = `https://solscan.io/tx/${result.signature}`;
-
     p.note(
       [
         `In:        ${result.inAmount} → Out: ${result.outAmount}`,
         `Type:      ${result.swapType}`,
         `Impact:    ${result.priceImpactPct}%`,
-        `Signature: ${result.signature}`,
-        `Solscan:   \u001b]8;;${solscanUrl}\u0007${solscanUrl}\u001b]8;;\u0007`,
+        `TX:        ${solscanTxUrl(result.signature)}`,
       ].join('\n'),
       'Result',
     );
@@ -295,9 +281,8 @@ async function runScript(args: string[], wallet: WalletService): Promise<void> {
     wallet,
   );
 
-  const solscanUrl = `https://solscan.io/tx/${result.signature}`;
   console.log(`Done! ${result.inAmount} → ${result.outAmount}`);
-  console.log(`Solscan: \u001b]8;;${solscanUrl}\u0007${solscanUrl}\u001b]8;;\u0007`);
+  console.log(`TX: ${solscanTxUrl(result.signature)}`);
 }
 
 // ---------------------------------------------------------------------------

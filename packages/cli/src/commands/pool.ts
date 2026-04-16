@@ -1,26 +1,23 @@
 /**
- * `lpcli pool <address>` — show detailed info for a specific pool.
+ * `lpcli meteora pool <address>` — show detailed info for a specific pool.
  *
  * Usage:
- *   lpcli pool <pool_address>
+ *   lpcli meteora pool <pool_address>
  *
  * No wallet needed — read-only.
  */
 
 import { LPCLI, type PoolInfo } from '@lpcli/core';
+import { formatMoney, formatPct } from '../helpers.js';
 
 // ---------------------------------------------------------------------------
-// Formatting helpers
+// Age formatter
 // ---------------------------------------------------------------------------
 
-function formatMoney(n: number): string {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000)     return `$${(n / 1_000).toFixed(1)}K`;
-  return `$${n.toFixed(2)}`;
-}
-
-function formatPct(n: number): string {
-  return `${(n * 100).toFixed(2)}%`;
+function formatAge(ms: number): string {
+  const days = Math.floor(ms / 86_400_000);
+  if (days >= 30) return `${Math.floor(days / 30)}mo ${days % 30}d`;
+  return `${days}d`;
 }
 
 // ---------------------------------------------------------------------------
@@ -30,7 +27,7 @@ function formatPct(n: number): string {
 export async function runPool(args: string[]): Promise<void> {
   const address = args[0];
   if (!address) {
-    console.error('Usage: lpcli pool <address>');
+    console.error('Usage: lpcli meteora pool <address>');
     process.exit(1);
   }
 
@@ -49,16 +46,35 @@ export async function runPool(args: string[]): Promise<void> {
 
   console.log(`
 Pool: ${info.name}
-Address: ${info.address}
+Address: ${info.pool_address}
+Type: ${info.pool_type.toUpperCase()}
+
+  Tokens:        ${info.token_x} / ${info.token_y}
+  Token X mint:  ${info.token_x_mint}
+  Token Y mint:  ${info.token_y_mint}
+  Bin Step:      ${info.bin_step > 0 ? `${info.bin_step} bps` : '—'}
+  Pool Age:      ${formatAge(info.pool_age_ms)}
+  Current Price: ${info.pool_price.toFixed(6)}
+  Active Bin:    ${info.active_bin || '(wallet not connected)'}
 
   TVL:           ${formatMoney(info.tvl)}
-  Volume 24h:    ${formatMoney(info.volume_24h)}
-  Fees 24h:      ${formatMoney(info.fee_24h)}
-  APR:           ${formatPct(info.apr / 100)}
-  APY:           ${formatPct(info.apy / 100)}
-  Active Bin:    ${info.active_bin || '(unavailable)'}
-  Current Price: ${info.current_price.toFixed(6)}
-  Bin Step:      ${info.bin_step} bps
-  Has Farm:      ${info.has_farm ? 'Yes' : 'No'}${info.has_farm ? `  (Farm APR: ${formatPct(info.farm_apr / 100)})` : ''}
+  Active TVL:    ${formatMoney(info.active_tvl)}
+  Fee %:         ${info.fee_pct}%
+
+  Fees (24h):    ${formatMoney(info.fee_24h)}
+  Avg Fees/Min:  ${formatMoney(info.avg_fee)}
+  Fee/Ac.TVL:    ${formatPct(info.fee_active_tvl_ratio / 100)}
+
+  Volume (24h):  ${formatMoney(info.volume_24h)}
+  Avg Vol/Min:   ${formatMoney(info.avg_volume)}
+
+  Volatility:    ${info.volatility.toFixed(2)}
+  Swaps (24h):   ${Math.round(info.swap_count)}
+  Traders (24h): ${Math.round(info.unique_traders)}
+
+  Open Positions:     ${Math.round(info.open_positions)}
+  In-Range Positions: ${Math.round(info.active_positions)} (${info.active_positions_pct.toFixed(1)}%)
+
+  Has Farm:      ${info.has_farm ? 'Yes' : 'No'}
 `);
 }

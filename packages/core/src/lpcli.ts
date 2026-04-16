@@ -1,24 +1,35 @@
 // ============================================================================
 // LPCLI Main Class — @lpcli/core
 //
-// Facade that wires config, wallet, DLMM, Meteora API, and funding ops.
-// CLI commands and agents should go through this class.
+// Facade that wires config, wallet, DLMM, Meteora API, token cache,
+// and funding ops. CLI commands and agents should go through this class.
 // ============================================================================
 
-import type { ScoredPool, PoolInfo, FundedOpenResult, FundedCloseResult, FundedClaimResult, ReadinessStatus } from './types.js';
+import type {
+  DiscoveredPool,
+  PoolInfo,
+  FundedOpenResult,
+  FundedCloseResult,
+  FundedClaimResult,
+  ReadinessStatus,
+  DiscoverConfig,
+} from './types.js';
 import type { LPCLIConfig, FundingToken } from './config.js';
 import { loadConfig } from './config.js';
-import { MeteoraClient } from './client.js';
+import { MeteoraClient, DEFAULT_DISCOVER_CONFIG } from './client.js';
 import { WalletService } from './wallet.js';
 import { DLMMService } from './dlmm.js';
 import { jupiterSwap } from './jup.js';
 import type { JupiterSwapResult } from './jup.js';
-import { rankPools, getVolume24, getFees24 } from './scoring.js';
 import { fundedOpen, fundedClose, fundedClaim } from './funding.js';
+import { TokenRegistry } from './tokens.js';
+import { Connection } from '@solana/web3.js';
 
 export class LPCLI {
   public meteora: MeteoraClient;
   public config: LPCLIConfig;
+  /** Token cache — auto-populated from API responses. */
+  public tokenRegistry: TokenRegistry;
   /** Lazily initialised — call `getWallet()` to trigger init. */
   private _wallet: WalletService | undefined;
   public dlmm: DLMMService | undefined;
@@ -26,6 +37,13 @@ export class LPCLI {
   constructor(config?: Partial<LPCLIConfig>) {
     this.config = { ...loadConfig(), ...config };
     this.meteora = new MeteoraClient({ rpcUrl: this.config.rpcUrl, cluster: this.config.cluster });
+
+    // Init token registry with a read-only connection (for Metaplex fallback)
+    const readRpc = this.config.readRpcUrl || this.config.rpcUrl;
+    this.tokenRegistry = new TokenRegistry(new Connection(readRpc, 'confirmed'));
+
+    // Wire token registry to API client for auto-population
+    this.meteora.setTokenRegistry(this.tokenRegistry);
   }
 
   /**
@@ -73,6 +91,7 @@ export class LPCLI {
         readRpcUrl: this.config.readRpcUrl,
         wallet: this._wallet,
         cluster: this.config.cluster,
+        tokenRegistry: this.tokenRegistry,
       });
     }
     return this._wallet;
@@ -83,79 +102,46 @@ export class LPCLI {
     return this.config.fundingToken;
   }
 
+  /** Get discover config from config file, merged with defaults. */
+  getDiscoverConfig(): DiscoverConfig {
+    return { ...DEFAULT_DISCOVER_CONFIG, ...this.config.discover };
+  }
+
   // ============================================================================
   // Pool discovery
   // ============================================================================
 
   /**
-   * Discover and rank DLMM pools for a given token pair.
+   * Discover pools with quality gates.
+   *
+   * Returns structured DiscoveredPool array — ready for CLI display or agent use.
+   * Token cache is auto-populated from API response.
+   *
+   * @param query  Optional — token symbol, pair name, mint, or pool address.
+   * @param config Override default gates and sort.
    */
   async discoverPools(
-    token?: string,
-    sortBy: 'score' | 'fee_yield' | 'volume' | 'tvl' = 'score',
-    limit = 10
-  ): Promise<ScoredPool[]> {
-    const sortMap: Record<string, string> = {
-      score: undefined as unknown as string,
-      fee_yield: 'fee_24h:desc',
-      volume: 'volume_24h:desc',
-      tvl: 'tvl:desc',
-    };
-
-    const filter = 'is_blacklisted=false';
-
-    const result = await this.meteora.getPools({
-      query: token,
-      pageSize: 100,
-      sortBy: sortMap[sortBy],
-      filterBy: filter,
-    });
-
-    const ranked = rankPools(result.data);
-
-    if (sortBy === 'score') {
-      return ranked.slice(0, limit);
-    }
-
-    const sorted =
-      sortBy === 'fee_yield'
-        ? [...ranked].sort((a, b) => b.fee_tvl_ratio_24h - a.fee_tvl_ratio_24h)
-        : sortBy === 'volume'
-          ? [...ranked].sort((a, b) => b.volume_24h - a.volume_24h)
-          : [...ranked].sort((a, b) => b.tvl - a.tvl);
-
-    return sorted.slice(0, limit);
+    query?: string,
+    config?: Partial<DiscoverConfig>,
+  ): Promise<DiscoveredPool[]> {
+    const cfg = { ...this.getDiscoverConfig(), ...config };
+    return this.meteora.discover(query, cfg);
   }
 
   /**
    * Get detailed info for a specific pool.
+   * Read-only — no wallet needed.
    */
   async getPoolInfo(address: string): Promise<PoolInfo> {
-    const raw = await this.meteora.getPool(address);
+    const info = await this.meteora.getPoolInfo(address);
 
     // Resolve active bin from SDK when wallet/DLMM is initialised.
-    let activeBin = 0;
     if (this.dlmm) {
       const meta = await this.dlmm.getPoolMeta(address);
-      activeBin = meta.activeBinId;
+      info.active_bin = meta.activeBinId;
     }
 
-    return {
-      address: raw.address,
-      name: raw.name,
-      token_x: raw.token_x.symbol,
-      token_y: raw.token_y.symbol,
-      bin_step: raw.pool_config.bin_step,
-      active_bin: activeBin,
-      current_price: raw.current_price,
-      tvl: raw.tvl,
-      volume_24h: getVolume24(raw.volume),
-      fee_24h: getFees24(raw.fees),
-      apr: raw.apr,
-      apy: raw.apy,
-      has_farm: raw.has_farm,
-      farm_apr: raw.farm_apr,
-    };
+    return info;
   }
 
   // ============================================================================
@@ -166,12 +152,6 @@ export class LPCLI {
    * Open a position with automatic funding-token swap.
    *
    * Flow: check balances → calculate split → swap → open position.
-   *
-   * @param pool      Pool address.
-   * @param amount    Budget in funding token's smallest unit.
-   * @param ratioX    Fraction for token X (0.0–1.0). Default 0.5 (balanced).
-   * @param strategy  Distribution strategy. Default 'spot'.
-   * @param widthBins Half-width in bins. Default: auto from bin step.
    */
   async openWithFunding(params: {
     pool: string;
@@ -195,11 +175,6 @@ export class LPCLI {
 
   /**
    * Close a position and swap proceeds back to funding token.
-   *
-   * Flow: close position → check balances → swap pool tokens → funding token.
-   *
-   * @param positionAddress The position to close.
-   * @param pool            The pool address (needed to resolve token mints).
    */
   async closeToFunding(positionAddress: string, pool: string): Promise<FundedCloseResult> {
     const wallet = await this.getWallet();
@@ -214,17 +189,13 @@ export class LPCLI {
 
   /**
    * Claim fees and swap them back to funding token.
-   *
-   * Flow: claim fees → check balances → swap fee tokens → funding token.
-   *
-   * @param positionAddress The position to claim from.
-   * @param pool            The pool address (needed to resolve token mints).
    */
-  async claimToFunding(positionAddress: string, pool: string): Promise<FundedClaimResult> {
+  async claimToFunding(positionAddress: string, pool?: string): Promise<FundedClaimResult> {
     const wallet = await this.getWallet();
+    const resolvedPool = pool ?? await this.dlmm!.resolvePoolForPosition(positionAddress);
     return fundedClaim({
       positionAddress,
-      pool,
+      pool: resolvedPool,
       config: this.config,
       wallet,
       dlmm: this.dlmm!,
@@ -232,12 +203,9 @@ export class LPCLI {
   }
 
   // ============================================================================
-  // Low-level swap helpers (kept for direct use / backwards compat)
+  // Low-level swap helpers
   // ============================================================================
 
-  /**
-   * Swap funding token → target token via Jupiter.
-   */
   async swapFromFunding(params: {
     outputMint: string;
     amount: number;
@@ -250,9 +218,6 @@ export class LPCLI {
     }, wallet);
   }
 
-  /**
-   * Swap target token → funding token via Jupiter.
-   */
   async swapToFunding(params: {
     inputMint: string;
     amount: number;

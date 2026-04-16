@@ -2,64 +2,205 @@
 // Shared Types — @lpcli/core
 // ============================================================================
 
-export interface MeteoraPoolRaw {
+// ---------------------------------------------------------------------------
+// Token info returned by pool-discovery API (richer than dlmm API)
+// ---------------------------------------------------------------------------
+
+export interface MeteoraTokenInfo {
   address: string;
   name: string;
-  token_x: { mint: string; symbol: string; decimals: number };
-  token_y: { mint: string; symbol: string; decimals: number };
-  reserve_x: string;
-  reserve_y: string;
-  token_x_amount: number;
-  token_y_amount: number;
-  created_at: number;
-  reward_mint_x: string;
-  reward_mint_y: string;
-  pool_config: {
-    bin_step: number;
-    activation_duration: number;
-    min_price: number;
-    max_price: number;
-    fee_bps: number;
-    protocol_fee_share_bps: number;
-  };
-  dynamic_fee_pct: number;
-  tvl: number;
-  current_price: number;
-  apr: number;
-  apy: number;
-  has_farm: boolean;
-  farm_apr: number;
-  farm_apy: number;
-  volume: Record<string, number>; // keys: "30m", "1h", "2h", "4h", "12h", "24h"
-  fees: Record<string, number>; // keys: "30m", "1h", "2h", "4h", "12h", "24h"
-  protocol_fees: Record<string, number>; // keys: "30m", "1h", "2h", "4h", "12h", "24h"
-  fee_tvl_ratio: number | Record<string, number>; // raw number OR object with time-window keys
-  cumulative_metrics: {
-    total_volume: number;
-    total_fees: number;
-    total_liquidity_added: number;
-    total_liquidity_removed: number;
-  };
-  is_blacklisted: boolean;
-  launchpad: string | null;
-  tags: string[];
+  symbol: string;
+  decimals: number;
+  icon?: string;
+  is_verified: boolean;
+  holders: number;
+  freeze_authority_disabled: boolean;
+  mint_authority_disabled?: boolean;
+  has_freeze_authority?: boolean;
+  has_mint_authority?: boolean;
+  total_supply: number;
+  price: number;
+  market_cap: number;
+  fdv?: number;
+  created_at?: number;
+  tags?: string[];
+  warnings?: { type: string; message: string; severity: string }[];
+  organic_score?: number;
+  organic_score_label?: string;
+  token_program?: string;
+  top_holders_pct?: number;
+  dev_balance_pct?: number;
 }
 
-export interface ScoredPool {
-  address: string;
+// ---------------------------------------------------------------------------
+// Raw pool from pool-discovery API
+// ---------------------------------------------------------------------------
+
+export interface MeteoraPoolRaw {
+  pool_address: string;
   name: string;
-  token_x: string;
-  token_y: string;
-  bin_step: number;
+  token_x: MeteoraTokenInfo;
+  token_y: MeteoraTokenInfo;
+  pool_type: 'dlmm' | 'damm_v2';
+  fee_pct: number;
+  pool_created_at: number;
+  is_blacklisted: boolean;
+  dlmm_params: { bin_step: number } | null;
+  damm_v2_params: { bin_step: number } | null;
+
+  // TVL
   tvl: number;
-  volume_24h: number;
-  fee_tvl_ratio_24h: number;
-  apr: number;
-  score: number;
-  momentum: number;
+  tvl_change_pct: number;
+  active_tvl: number;
+  active_tvl_change_pct: number;
+
+  // Fee metrics
+  fee: number;
+  fee_change_pct: number;
+  avg_fee: number;
+  fee_tvl_ratio: number;
+  fee_tvl_ratio_change_pct: number;
+  fee_active_tvl_ratio: number;
+  fee_active_tvl_ratio_change_pct: number;
+
+  // Volume metrics
+  volume: number;
+  volume_change_pct: number;
+  avg_volume: number;
+  volume_tvl_ratio: number;
+  volume_tvl_ratio_change_pct: number;
+  volume_active_tvl_ratio: number;
+  volume_active_tvl_ratio_change_pct: number;
+
+  // Trading activity
+  swap_count: number;
+  swap_count_change_pct: number;
+  avg_swap_count: number;
+  unique_traders: number;
+  unique_traders_change_pct: number;
+
+  // LP activity
+  unique_lps: number;
+  unique_lps_change_pct: number;
+  total_lps: number;
+  total_lps_change_pct: number;
+  net_deposits: number;
+  net_deposits_change_pct: number;
+  total_deposits: number;
+  total_withdraws: number;
+
+  // Position stats
+  open_positions: number;
+  active_positions: number;
+  active_positions_pct: number;
+  positions_created: number;
+  positions_created_change_pct: number;
+
+  // Price & volatility
+  pool_price: number;
+  pool_price_change_pct: number;
+  max_price: number;
+  min_price: number;
+  volatility: number;
+  correlation: number;
+  price_trend: number[];
+
+  // Token holder stats
+  base_token_holders: number;
+  base_token_holders_change_pct: number;
+  base_token_market_cap_change_pct: number;
+  base_token_fdv_change_pct: number;
+
+  // Farm & misc
   has_farm: boolean;
-  farm_apr: number;
+  dynamic_fee_pct: number;
+  permanent_lock_liquidity_pct: number;
+
+  // Legacy compat — old API had these, some callers may still use
+  /** @deprecated Use pool_address */
+  address?: string;
+  /** @deprecated Use pool_price */
+  current_price?: number;
+  /** @deprecated Use fee_pct */
+  apr?: number;
+  /** @deprecated */
+  apy?: number;
+  /** @deprecated */
+  farm_apr?: number;
 }
+
+/**
+ * Processed pool from discover — agent-friendly structured data.
+ * All fields are pre-computed; no further API calls needed to display or act on.
+ */
+export interface DiscoveredPool {
+  /** Pool on-chain address. */
+  pool_address: string;
+  /** Human-readable pair name, e.g. "SOL-USDC". */
+  name: string;
+  /** Token X symbol. */
+  token_x: string;
+  /** Token Y symbol. */
+  token_y: string;
+  /** Token X mint address. */
+  token_x_mint: string;
+  /** Token Y mint address. */
+  token_y_mint: string;
+  /** Bin step in bps (DLMM only). */
+  bin_step: number;
+  /** Pool type: dlmm or damm_v2. */
+  pool_type: 'dlmm' | 'damm_v2';
+
+  // Fee metrics (24h)
+  /** Average fees per minute in USD. */
+  avg_fee: number;
+  /** Total fees in 24h in USD. */
+  fee_24h: number;
+  /** Fees / Active TVL ratio (24h). */
+  fee_active_tvl_ratio: number;
+
+  // Volume metrics (24h)
+  /** Average volume per minute in USD. */
+  avg_volume: number;
+  /** Total volume in 24h in USD. */
+  volume_24h: number;
+
+  // TVL
+  /** Active TVL (in-range liquidity only). */
+  active_tvl: number;
+  /** Total TVL. */
+  tvl: number;
+
+  // Risk / activity
+  /** Price volatility (24h). */
+  volatility: number;
+  /** Number of swaps in 24h. */
+  swap_count: number;
+  /** Unique traders in 24h. */
+  unique_traders: number;
+  /** Open positions count. */
+  open_positions: number;
+  /** In-range positions count. */
+  active_positions: number;
+
+  // Pool info
+  /** Current pool price (X in terms of Y). */
+  pool_price: number;
+  /** Pool age in ms since creation. */
+  pool_age_ms: number;
+  /** Has active farming rewards. */
+  has_farm: boolean;
+  /** Fee percentage. */
+  fee_pct: number;
+
+  // Change indicators (24h)
+  fee_change_pct: number;
+  volume_change_pct: number;
+  active_tvl_change_pct: number;
+}
+
+/** @deprecated Use DiscoveredPool instead. Kept for backwards compat during migration. */
+export type ScoredPool = DiscoveredPool;
 
 export interface Position {
   address: string;
@@ -97,20 +238,37 @@ export interface Position {
 }
 
 export interface PoolInfo {
-  address: string;
+  pool_address: string;
   name: string;
   token_x: string;
   token_y: string;
+  token_x_mint: string;
+  token_y_mint: string;
   bin_step: number;
+  pool_type: 'dlmm' | 'damm_v2';
   active_bin: number;
-  current_price: number;
+  pool_price: number;
+  fee_pct: number;
   tvl: number;
-  volume_24h: number;
+  active_tvl: number;
+  // Fee/volume (24h)
   fee_24h: number;
-  apr: number;
-  apy: number;
+  avg_fee: number;
+  fee_active_tvl_ratio: number;
+  volume_24h: number;
+  avg_volume: number;
+  // Risk & activity
+  volatility: number;
+  swap_count: number;
+  unique_traders: number;
+  open_positions: number;
+  active_positions: number;
+  active_positions_pct: number;
+  // Misc
   has_farm: boolean;
-  farm_apr: number;
+  pool_age_ms: number;
+  /** @deprecated Use pool_address */
+  address?: string;
 }
 
 /**
@@ -200,6 +358,23 @@ export interface ReadinessStatus {
 export interface MeteoraClientOptions {
   rpcUrl: string;
   cluster: 'mainnet' | 'devnet';
+}
+
+/**
+ * Configurable gates for discover — pools that fail any gate are excluded.
+ * Stored in config.json under `discover` key.
+ */
+export interface DiscoverConfig {
+  /** Results per page in interactive UI. Default 10. */
+  pageSize: number;
+  /** Server-side sort field. Default 'fee_active_tvl_ratio'. */
+  defaultSort: string;
+  /** Minimum active TVL in USD. Default 50000. */
+  minActiveTvl: number;
+  /** Minimum swap count (24h). Default 200. */
+  minSwapCount: number;
+  /** Minimum unique traders (24h). Default 50. */
+  minTraders: number;
 }
 
 export interface ScoringWeights {
