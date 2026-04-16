@@ -209,17 +209,11 @@ async function runInteractive(wallet: WalletService): Promise<void> {
 
     execSpinner.stop(`Swap complete!`);
 
-    p.note(
-      [
-        `In:        ${result.inAmount} → Out: ${result.outAmount}`,
-        `Type:      ${result.swapType}`,
-        `Impact:    ${result.priceImpactPct}%`,
-        `TX:        ${solscanTxUrl(result.signature)}`,
-      ].join('\n'),
-      'Result',
-    );
-
-    p.outro('Done!');
+    console.log(`
+  In:      ${result.inAmount} → Out: ${result.outAmount}
+  Impact:  ${result.priceImpactPct}%
+  TX:      ${solscanTxUrl(result.signature)}
+`);
   } catch (err: unknown) {
     execSpinner.stop('Swap failed.');
     p.cancel(err instanceof Error ? err.message : String(err));

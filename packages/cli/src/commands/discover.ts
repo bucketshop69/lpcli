@@ -45,7 +45,9 @@ function fmtVol(n: number): string {
 }
 
 function fmtPct(n: number): string {
-  return `${n.toFixed(2)}%`;
+  if (n >= 10000) return `${(n / 1000).toFixed(0)}K%`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K%`;
+  return `${n.toFixed(0)}%`;
 }
 
 type Col = { header: string; width: number; get: (p: DiscoveredPool) => string; align: 'left' | 'right' };
@@ -55,7 +57,7 @@ const COLUMNS: Col[] = [
   { header: 'Pool',      width: 16, get: (p) => p.name, align: 'left' },
   { header: 'Address',   width: 9,  get: (p) => shortAddr(p.pool_address, 4, 3), align: 'left' },
   { header: 'Fees/Min',  width: 8,  get: (p) => fmtFee(p.avg_fee), align: 'right' },
-  { header: 'Fee/AcTVL', width: 9,  get: (p) => fmtPct(p.fee_active_tvl_ratio), align: 'right' },
+  { header: 'APR',       width: 9,  get: (p) => fmtPct(p.fee_active_tvl_ratio * 365), align: 'right' },
   { header: 'AcTVL',     width: 9,  get: (p) => formatMoney(p.active_tvl), align: 'right' },
   { header: 'Volat.',    width: 6,  get: (p) => p.volatility.toFixed(2), align: 'right' },
   { header: 'Swaps',     width: 6,  get: (p) => p.swap_count >= 1000 ? `${(p.swap_count / 1000).toFixed(1)}K` : String(Math.round(p.swap_count)), align: 'right' },

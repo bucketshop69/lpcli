@@ -590,12 +590,24 @@ export class DLMMService {
     const rangeLow = parseFloat(sdk.getPriceOfBinByBinId(finalMinBinId, finalBinStep).toString());
     const rangeHigh = parseFloat(sdk.getPriceOfBinByBinId(finalMaxBinId, finalBinStep).toString());
 
+    // Resolve token symbols and decimals from pool metadata
+    const meta = await this.getPoolMeta(params.pool);
+    const registry = this._options.tokenRegistry;
+    const tokenXSymbol = (registry?.getCached(meta.tokenXMint)?.symbol ?? meta.tokenXMint.slice(0, 6)).toUpperCase();
+    const tokenYSymbol = (registry?.getCached(meta.tokenYMint)?.symbol ?? meta.tokenYMint.slice(0, 6)).toUpperCase();
+    const rawX = params.amountX ?? 0;
+    const rawY = params.amountY ?? 0;
+
     return {
       position: positionKeypair.publicKey.toBase58(),
       range_low: rangeLow,
       range_high: rangeHigh,
-      deposited_x: params.amountX ?? 0,
-      deposited_y: params.amountY ?? 0,
+      deposited_x: rawX,
+      deposited_y: rawY,
+      deposited_x_ui: rawX / 10 ** meta.tokenXDecimals,
+      deposited_y_ui: rawY / 10 ** meta.tokenYDecimals,
+      token_x_symbol: tokenXSymbol,
+      token_y_symbol: tokenYSymbol,
       tx: signatures[signatures.length - 1],
     };
   }
@@ -633,11 +645,30 @@ export class DLMMService {
       },
     );
 
+    const tokenXDecimals = positionInfo.tokenX?.mint?.decimals ?? 6;
+    const tokenYDecimals = positionInfo.tokenY?.mint?.decimals ?? 6;
+    const tokenXMint = positionInfo.tokenX?.mint?.address?.toBase58() ?? '';
+    const tokenYMint = positionInfo.tokenY?.mint?.address?.toBase58() ?? '';
+    const registry = this._options.tokenRegistry;
+    const tokenXSymbol = (registry?.getCached(tokenXMint)?.symbol ?? tokenXMint.slice(0, 6)).toUpperCase();
+    const tokenYSymbol = (registry?.getCached(tokenYMint)?.symbol ?? tokenYMint.slice(0, 6)).toUpperCase();
+
+    const rawX = parseFloat(posData.totalXAmount);
+    const rawY = parseFloat(posData.totalYAmount);
+    const feesX = posData.feeX.toNumber();
+    const feesY = posData.feeY.toNumber();
+
     return {
-      withdrawn_x: parseFloat(posData.totalXAmount),
-      withdrawn_y: parseFloat(posData.totalYAmount),
-      claimed_fees_x: posData.feeX.toNumber(),
-      claimed_fees_y: posData.feeY.toNumber(),
+      withdrawn_x: rawX,
+      withdrawn_y: rawY,
+      withdrawn_x_ui: rawX / 10 ** tokenXDecimals,
+      withdrawn_y_ui: rawY / 10 ** tokenYDecimals,
+      claimed_fees_x: feesX,
+      claimed_fees_y: feesY,
+      claimed_fees_x_ui: feesX / 10 ** tokenXDecimals,
+      claimed_fees_y_ui: feesY / 10 ** tokenYDecimals,
+      token_x_symbol: tokenXSymbol,
+      token_y_symbol: tokenYSymbol,
       tx: signatures[signatures.length - 1],
     };
   }

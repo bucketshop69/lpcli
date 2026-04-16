@@ -15,6 +15,7 @@ import {
 } from '@solana/web3.js';
 import {
   TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
   getOrCreateAssociatedTokenAccount,
   createTransferInstruction,
   getAssociatedTokenAddress,
@@ -219,26 +220,34 @@ export class WalletService {
     const SOL = 'So11111111111111111111111111111111111111112';
     const unique = [...new Set(mints.filter(m => m !== SOL))];
 
-    // Derive all ATAs locally (zero RPC, pure math)
-    const atas = unique.map(mint =>
-      getAssociatedTokenAddressSync(new PublicKey(mint), this._publicKey),
+    // Derive ATAs for both legacy and Token-2022 programs
+    const legacyAtas = unique.map(mint =>
+      getAssociatedTokenAddressSync(new PublicKey(mint), this._publicKey, false, TOKEN_PROGRAM_ID),
+    );
+    const token2022Atas = unique.map(mint =>
+      getAssociatedTokenAddressSync(new PublicKey(mint), this._publicKey, false, TOKEN_2022_PROGRAM_ID),
     );
 
-    // Single RPC call: wallet account (for SOL lamports) + all ATAs
+    // Single RPC call: wallet + legacy ATAs + Token-2022 ATAs
     const accounts = await this.connection.getMultipleAccountsInfo([
       this._publicKey,
-      ...atas,
+      ...legacyAtas,
+      ...token2022Atas,
     ]);
 
     const solLamports = accounts[0]?.lamports ?? 0;
     const tokens: TokenBalance[] = [];
 
     for (let i = 0; i < unique.length; i++) {
-      const accountInfo = accounts[i + 1];
+      // Try legacy first, then Token-2022
+      const legacyAcct = accounts[1 + i];
+      const t2022Acct = accounts[1 + unique.length + i];
+      const accountInfo = (legacyAcct?.data && legacyAcct.data.length >= AccountLayout.span) ? legacyAcct : t2022Acct;
+
       if (!accountInfo?.data || accountInfo.data.length < AccountLayout.span) continue;
 
       const decoded = AccountLayout.decode(accountInfo.data);
-      const rawAmount = decoded.amount; // bigint
+      const rawAmount = decoded.amount;
       if (rawAmount === BigInt(0)) continue;
 
       const mint = unique[i];
@@ -265,14 +274,16 @@ export class WalletService {
    * Prefer getMintBalances() when you know which mints you need.
    */
   async getBalances(): Promise<WalletBalances> {
-    const solLamports = await this.connection.getBalance(this._publicKey);
+    // Fetch SOL + legacy tokens + Token-2022 tokens in parallel
+    const [solLamports, legacyAccounts, token2022Accounts] = await Promise.all([
+      this.connection.getBalance(this._publicKey),
+      this.connection.getParsedTokenAccountsByOwner(this._publicKey, { programId: TOKEN_PROGRAM_ID }),
+      this.connection.getParsedTokenAccountsByOwner(this._publicKey, { programId: TOKEN_2022_PROGRAM_ID }),
+    ]);
 
-    const tokenAccounts = await this.connection.getParsedTokenAccountsByOwner(
-      this._publicKey,
-      { programId: TOKEN_PROGRAM_ID }
-    );
+    const allAccounts = [...legacyAccounts.value, ...token2022Accounts.value];
 
-    const tokens: TokenBalance[] = tokenAccounts.value
+    const tokens: TokenBalance[] = allAccounts
       .map((ta) => {
         const info = ta.account.data.parsed.info;
         return {

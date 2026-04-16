@@ -327,6 +327,11 @@ export interface OpenPositionResult {
   range_high: number;
   deposited_x: number;
   deposited_y: number;
+  /** UI-friendly deposited amounts (decimal-adjusted). */
+  deposited_x_ui: number;
+  deposited_y_ui: number;
+  token_x_symbol: string;
+  token_y_symbol: string;
   tx: string;
 }
 
@@ -335,6 +340,13 @@ export interface ClosePositionResult {
   withdrawn_y: number;
   claimed_fees_x: number;
   claimed_fees_y: number;
+  /** UI-friendly amounts (decimal-adjusted). */
+  withdrawn_x_ui: number;
+  withdrawn_y_ui: number;
+  claimed_fees_x_ui: number;
+  claimed_fees_y_ui: number;
+  token_x_symbol: string;
+  token_y_symbol: string;
   tx: string;
 }
 
