@@ -21,15 +21,21 @@ import { getFlag, hasFlag, createRL, ask, formatStatus, solscanTxUrl, shortAddr 
 // Display positions table
 // ---------------------------------------------------------------------------
 
+function tokenSymbols(p: Position): [string, string] {
+  const parts = p.pool_name.split('-');
+  return parts.length >= 2 ? [parts[0], parts.slice(1).join('-')] : [p.token_x_mint.slice(0, 6), p.token_y_mint.slice(0, 6)];
+}
+
 function showPositions(positions: Position[]): void {
   console.log();
   for (let i = 0; i < positions.length; i++) {
     const p = positions[i];
+    const [sX, sY] = tokenSymbols(p);
     console.log(`  [${i + 1}] ${p.pool_name}  |  ${formatStatus(p.status)}`);
     console.log(`      Position: ${p.address}`);
     console.log(`      Pool:     ${p.pool}`);
-    console.log(`      Value:    ${p.current_value_x_ui.toFixed(4)} X  +  ${p.current_value_y_ui.toFixed(4)} Y`);
-    console.log(`      Fees:     ${p.fees_earned_x_ui.toFixed(6)} X  +  ${p.fees_earned_y_ui.toFixed(6)} Y`);
+    console.log(`      Value:    ${p.current_value_x_ui.toFixed(4)} ${sX}  +  ${p.current_value_y_ui.toFixed(4)} ${sY}`);
+    console.log(`      Fees:     ${p.fees_earned_x_ui.toFixed(6)} ${sX}  +  ${p.fees_earned_y_ui.toFixed(6)} ${sY}`);
     console.log(`      Range:    ${p.range_low.toFixed(6)} — ${p.range_high.toFixed(6)}  (${p.total_bins} bins)`);
     console.log();
   }
@@ -40,27 +46,25 @@ function showPositions(positions: Position[]): void {
 // ---------------------------------------------------------------------------
 
 function printCloseResult(result: ClosePositionResult): void {
+  const { token_x_symbol: sX, token_y_symbol: sY } = result;
   console.log(`
 Position closed!
 
-  Withdrawn X:    ${result.withdrawn_x}
-  Withdrawn Y:    ${result.withdrawn_y}
-  Claimed fees X: ${result.claimed_fees_x}
-  Claimed fees Y: ${result.claimed_fees_y}
-  TX:             ${solscanTxUrl(result.tx)}
+  Withdrawn:    ${result.withdrawn_x_ui.toFixed(4)} ${sX}  +  ${result.withdrawn_y_ui.toFixed(4)} ${sY}
+  Fees claimed: ${result.claimed_fees_x_ui.toFixed(6)} ${sX}  +  ${result.claimed_fees_y_ui.toFixed(6)} ${sY}
+  TX:           ${solscanTxUrl(result.tx)}
 `);
 }
 
 function printFundedCloseResult(result: FundedCloseResult): void {
+  const { token_x_symbol: sX, token_y_symbol: sY } = result.close;
   console.log(`
 Position closed!
 
-  Withdrawn X:    ${result.close.withdrawn_x}
-  Withdrawn Y:    ${result.close.withdrawn_y}
-  Claimed fees X: ${result.close.claimed_fees_x}
-  Claimed fees Y: ${result.close.claimed_fees_y}
-  Close TX:       ${solscanTxUrl(result.close.tx)}
-  Swap-back:      ${result.swaps.length} swap(s) executed
+  Withdrawn:    ${result.close.withdrawn_x_ui.toFixed(4)} ${sX}  +  ${result.close.withdrawn_y_ui.toFixed(4)} ${sY}
+  Fees claimed: ${result.close.claimed_fees_x_ui.toFixed(6)} ${sX}  +  ${result.close.claimed_fees_y_ui.toFixed(6)} ${sY}
+  Close TX:     ${solscanTxUrl(result.close.tx)}
+  Swap-back:    ${result.swaps.length} swap(s) executed
 `);
 
   for (const swap of result.swaps) {

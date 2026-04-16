@@ -83,16 +83,20 @@ export async function runOpen(args: string[]): Promise<void> {
     const poolMeta = await dlmm.getPoolMeta(pool);
     const balances = await wallet.getBalances();
 
+    // Resolve token symbols from cache
+    const symX = (lpcli.tokenRegistry.getCached(poolMeta.tokenXMint)?.symbol ?? poolMeta.tokenXMint.slice(0, 6)).toUpperCase();
+    const symY = (lpcli.tokenRegistry.getCached(poolMeta.tokenYMint)?.symbol ?? poolMeta.tokenYMint.slice(0, 6)).toUpperCase();
+
     const rl = createRL();
     console.log(`
 Open position on pool ${pool}:
-  Funding token:  ${funding.symbol} (${funding.mint.slice(0, 8)}...)
+  Funding token:  ${funding.symbol}
   Budget:         ${amountUi} ${funding.symbol}
-  Split ratio:    ${(ratioX * 100).toFixed(0)}% X / ${((1 - ratioX) * 100).toFixed(0)}% Y
+  Split ratio:    ${(ratioX * 100).toFixed(0)}% ${symX} / ${((1 - ratioX) * 100).toFixed(0)}% ${symY}
   Strategy:       ${strategy}
   Bin width:      ${widthBins !== undefined ? String(widthBins) : 'auto'}
-  Pool tokens:    X=${poolMeta.tokenXMint.slice(0, 8)}... / Y=${poolMeta.tokenYMint.slice(0, 8)}...
-  Active price:   ${poolMeta.activePrice.toFixed(6)} (X in Y terms)
+  Pool:           ${symX}-${symY}
+  Active price:   ${poolMeta.activePrice.toFixed(6)} ${symY} per ${symX}
   SOL balance:    ${balances.solBalance.toFixed(4)} SOL (${lpcli.config.feeReserveSol} SOL reserved for fees)
 `);
 
@@ -125,8 +129,7 @@ Position opened successfully!
 
   Position:    ${result.position.position}
   Range:       ${result.position.range_low.toFixed(6)} — ${result.position.range_high.toFixed(6)}
-  Deposited X: ${result.position.deposited_x}
-  Deposited Y: ${result.position.deposited_y}
+  Deposited:   ${result.position.deposited_x_ui.toFixed(4)} ${result.position.token_x_symbol}  +  ${result.position.deposited_y_ui.toFixed(4)} ${result.position.token_y_symbol}
   TX:          ${solscanTxUrl(result.position.tx)}
   Swaps:       ${result.swaps.length} swap(s) executed
 `);
@@ -186,8 +189,7 @@ Position opened successfully!
 
   Position:    ${result.position}
   Range:       ${result.range_low.toFixed(6)} — ${result.range_high.toFixed(6)}
-  Deposited X: ${result.deposited_x} (raw)
-  Deposited Y: ${result.deposited_y} (raw)
+  Deposited:   ${result.deposited_x_ui.toFixed(4)} ${result.token_x_symbol}  +  ${result.deposited_y_ui.toFixed(4)} ${result.token_y_symbol}
   TX:          ${solscanTxUrl(result.tx)}
 `);
 }
