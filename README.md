@@ -1,6 +1,6 @@
 # LPCLI
 
-Agentic DeFi platform for Solana — Meteora DLMM liquidity, Pacifica perpetuals, Jupiter swaps, and a conversational AI agent. Terminal, MCP, and ElizaOS interfaces sharing one SDK.
+Agentic DeFi platform for Solana — Meteora DLMM liquidity, pacific perpetuals, Jupiter swaps, and a conversational AI agent. Terminal, MCP, and ElizaOS interfaces sharing one SDK.
 
 Built on [Open Wallet Standard](https://github.com/open-wallet-standard/core). Private keys never leave your machine.
 
@@ -56,7 +56,7 @@ lpcli positions                               # Live P&L, in/out of range
 lpcli close                                   # Interactive close + swap-back
 ```
 
-### Pacifica — Perpetuals Trading
+### pacific — Perpetuals Trading
 
 Market and limit orders, stop-loss/take-profit, RSI-conditional entries, up to 20x leverage.
 
@@ -158,8 +158,8 @@ LPCLI exposes 16 MCP tools for AI agent integration:
 | `perps_close_position` | Close perps position | Yes |
 | `perps_set_sl` | Set stop-loss | Yes |
 | `perps_set_tp` | Set take-profit | Yes |
-| `perps_deposit` | Deposit USDC to Pacifica | Yes |
-| `perps_withdraw` | Withdraw USDC from Pacifica | Yes |
+| `perps_deposit` | Deposit USDC to pacific | Yes |
+| `perps_withdraw` | Withdraw USDC from pacific | Yes |
 
 ---
 

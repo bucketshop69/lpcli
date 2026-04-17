@@ -7,7 +7,7 @@
  */
 
 import type { Provider, ProviderResult } from '@elizaos/core';
-import { getPacifica, checkReady } from '../services/lpcli.service.js';
+import { getpacific, checkReady } from '../services/lpcli.service.js';
 
 export const portfolioProvider: Provider = {
   name: 'PORTFOLIO_STATE',
@@ -26,7 +26,7 @@ export const portfolioProvider: Provider = {
     }
 
     const address = readiness.address!;
-    const client = getPacifica();
+    const client = getpacific();
 
     try {
       const [account, positions, orders, prices] = await Promise.all([

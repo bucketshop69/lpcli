@@ -14,21 +14,21 @@
  *   claim         Claim fees without closing
  */
 
-import { runInit }      from './commands/init.js';
-import { runMeteora }   from './commands/meteora.js';
-import { runWallet }    from './commands/wallet.js';
-import { runPerps }     from './commands/perps.js';
-import { runPredict }   from './commands/predict.js';
-import { runEliza }     from './commands/eliza.js';
+import { runInit } from './commands/init.js';
+import { runMeteora } from './commands/meteora.js';
+import { runWallet } from './commands/wallet.js';
+import { runPerps } from './commands/perps.js';
+import { runPredict } from './commands/predict.js';
+import { runEliza } from './commands/eliza.js';
 
 // Legacy direct imports — kept for backwards compat during migration
-import { runDiscover }  from './commands/discover.js';
-import { runPool }      from './commands/pool.js';
+import { runDiscover } from './commands/discover.js';
+import { runPool } from './commands/pool.js';
 import { runPositions } from './commands/positions.js';
-import { runOpen }      from './commands/open.js';
-import { runClose }     from './commands/close.js';
-import { runClaim }     from './commands/claim.js';
-import { runSwap }      from './commands/swap.js';
+import { runOpen } from './commands/open.js';
+import { runClose } from './commands/close.js';
+import { runClaim } from './commands/claim.js';
+import { runSwap } from './commands/swap.js';
 
 const [, , command, ...args] = process.argv;
 
@@ -96,13 +96,13 @@ async function main(): Promise<void> {
 
 function printHelp(): void {
   console.log(`
-lpcli — DeFi terminal for Meteora, Pacifica, and Polymarket
+lpcli — DeFi terminal for Meteora, pacific, and Polymarket
 
 Usage:
   lpcli init                   Interactive wallet and config setup
   lpcli meteora                Meteora DLMM (discover, open, close, swap, ...)
   lpcli wallet                 Wallet operations (balance, transfer)
-  lpcli perps                  Pacifica perpetuals
+  lpcli perps                  pacific perpetuals
   lpcli predict                Polymarket prediction markets
   lpcli eliza                  Conversational DeFi agent
 

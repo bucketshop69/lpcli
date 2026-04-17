@@ -28,7 +28,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import {
   LPCLI,
-  PacificaClient,
+  pacificClient,
   createMarketOrder,
   closePosition as closePerpsPosition,
   cancelAllOrders,
@@ -36,7 +36,7 @@ import {
   buildDepositTransaction,
   requestWithdrawal,
   roundToLotSize,
-  PACIFICA_MIN_DEPOSIT_USDC,
+  pacific_MIN_DEPOSIT_USDC,
 } from '@lpcli/core';
 import type { ReadinessStatus } from '@lpcli/core';
 
@@ -266,20 +266,20 @@ server.tool(
 );
 
 // ===========================================================================
-// Pacifica Perps Tools
+// pacific Perps Tools
 // ===========================================================================
 
 // ── perps_list_markets ─────────────────────────────────────────────────────
 
 server.tool(
   'perps_list_markets',
-  'List all available Pacifica perpetual markets with prices, funding rates, volume, and leverage. No wallet needed.',
+  'List all available pacific perpetual markets with prices, funding rates, volume, and leverage. No wallet needed.',
   {
     sort_by: z.enum(['volume', 'symbol']).default('volume').describe('Sort order'),
     limit: z.number().int().min(1).max(100).default(20).describe('Max results'),
   },
   async ({ sort_by, limit }) => {
-    const client = new PacificaClient();
+    const client = new pacificClient();
     const [markets, prices] = await Promise.all([
       client.getMarkets(),
       client.getPrices(),
@@ -308,7 +308,7 @@ server.tool(
       return `${m.symbol}: $${mark.toLocaleString()} | Funding: ${funding}% | Vol: $${vol.toLocaleString()} | ${m.max_leverage}x | Lot: ${m.lot_size}`;
     }).join('\n');
 
-    return { content: [{ type: 'text', text: `Pacifica Markets (${sorted.length}):\n${text}` }] };
+    return { content: [{ type: 'text', text: `pacific Markets (${sorted.length}):\n${text}` }] };
   }
 );
 
@@ -316,18 +316,18 @@ server.tool(
 
 server.tool(
   'perps_get_account',
-  'Get Pacifica perps account balance, equity, margin used, and available funds. Requires wallet.',
+  'Get pacific perps account balance, equity, margin used, and available funds. Requires wallet.',
   {},
   async () => {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
     const address = wallet.getPublicKey().toBase58();
-    const client = new PacificaClient();
+    const client = new pacificClient();
 
     try {
       const info = await client.getAccountInfo(address);
       const text =
-        `Pacifica Account: ${address}\n` +
+        `pacific Account: ${address}\n` +
         `Balance: $${parseFloat(info.balance).toFixed(2)}\n` +
         `Equity: $${parseFloat(info.account_equity).toFixed(2)}\n` +
         `Available to Spend: $${parseFloat(info.available_to_spend).toFixed(2)}\n` +
@@ -338,7 +338,7 @@ server.tool(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('404') || msg.toLowerCase().includes('not found')) {
-        return { content: [{ type: 'text', text: `No Pacifica account found for ${address}. Deposit at least $${PACIFICA_MIN_DEPOSIT_USDC} USDC to create one.` }] };
+        return { content: [{ type: 'text', text: `No pacific account found for ${address}. Deposit at least $${pacific_MIN_DEPOSIT_USDC} USDC to create one.` }] };
       }
       throw err;
     }
@@ -349,13 +349,13 @@ server.tool(
 
 server.tool(
   'perps_get_positions',
-  'List open Pacifica perps positions with live PnL. Requires wallet.',
+  'List open pacific perps positions with live PnL. Requires wallet.',
   {},
   async () => {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
     const address = wallet.getPublicKey().toBase58();
-    const client = new PacificaClient();
+    const client = new pacificClient();
 
     const [positions, prices] = await Promise.all([
       client.getPositions(address),
@@ -387,7 +387,7 @@ server.tool(
 
 server.tool(
   'perps_execute_trade',
-  'Place a market order on Pacifica perps. Opens a long or short position. Requires wallet.',
+  'Place a market order on pacific perps. Opens a long or short position. Requires wallet.',
   {
     symbol: z.string().describe('Market symbol (e.g. BTC, ETH, SOL)'),
     direction: z.enum(['long', 'short']).describe('Trade direction'),
@@ -397,7 +397,7 @@ server.tool(
   async ({ symbol, direction, size, slippage_percent }) => {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = new PacificaClient();
+    const client = new pacificClient();
 
     const result = await createMarketOrder(wallet, {
       symbol: symbol.toUpperCase(),
@@ -414,14 +414,14 @@ server.tool(
 
 server.tool(
   'perps_close_position',
-  'Close an open Pacifica perps position with a reduce-only market order. Requires wallet.',
+  'Close an open pacific perps position with a reduce-only market order. Requires wallet.',
   {
     symbol: z.string().describe('Market symbol of position to close (e.g. BTC, ETH, SOL)'),
   },
   async ({ symbol }) => {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = new PacificaClient();
+    const client = new pacificClient();
 
     const result = await closePerpsPosition(wallet, symbol.toUpperCase(), client);
 
@@ -437,7 +437,7 @@ server.tool(
 
 server.tool(
   'perps_set_sl',
-  'Set a stop-loss on an existing Pacifica perps position. Requires wallet.',
+  'Set a stop-loss on an existing pacific perps position. Requires wallet.',
   {
     symbol: z.string().describe('Market symbol (e.g. BTC, ETH, SOL)'),
     price: z.number().positive().describe('Stop-loss trigger price'),
@@ -445,7 +445,7 @@ server.tool(
   async ({ symbol, price }) => {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = new PacificaClient();
+    const client = new pacificClient();
 
     await setPositionTPSL(wallet, {
       symbol: symbol.toUpperCase(),
@@ -460,7 +460,7 @@ server.tool(
 
 server.tool(
   'perps_set_tp',
-  'Set a take-profit on an existing Pacifica perps position. Requires wallet.',
+  'Set a take-profit on an existing pacific perps position. Requires wallet.',
   {
     symbol: z.string().describe('Market symbol (e.g. BTC, ETH, SOL)'),
     price: z.number().positive().describe('Take-profit trigger price'),
@@ -468,7 +468,7 @@ server.tool(
   async ({ symbol, price }) => {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = new PacificaClient();
+    const client = new pacificClient();
 
     await setPositionTPSL(wallet, {
       symbol: symbol.toUpperCase(),
@@ -483,9 +483,9 @@ server.tool(
 
 server.tool(
   'perps_deposit',
-  `Deposit USDC collateral to Pacifica. Minimum $${PACIFICA_MIN_DEPOSIT_USDC}. Requires wallet.`,
+  `Deposit USDC collateral to pacific. Minimum $${pacific_MIN_DEPOSIT_USDC}. Requires wallet.`,
   {
-    amount: z.number().min(PACIFICA_MIN_DEPOSIT_USDC).describe(`USDC amount to deposit (min $${PACIFICA_MIN_DEPOSIT_USDC})`),
+    amount: z.number().min(pacific_MIN_DEPOSIT_USDC).describe(`USDC amount to deposit (min $${pacific_MIN_DEPOSIT_USDC})`),
   },
   async ({ amount }) => {
     const lpcli = await requireWallet();
@@ -498,7 +498,7 @@ server.tool(
     const sig = await connection.sendRawTransaction(signed.serialize());
     await connection.confirmTransaction(sig, 'confirmed');
 
-    return { content: [{ type: 'text', text: `Deposited $${amount.toFixed(2)} USDC to Pacifica.\nTx: ${sig}` }] };
+    return { content: [{ type: 'text', text: `Deposited $${amount.toFixed(2)} USDC to pacific.\nTx: ${sig}` }] };
   }
 );
 
@@ -506,18 +506,18 @@ server.tool(
 
 server.tool(
   'perps_withdraw',
-  'Withdraw USDC collateral from Pacifica. Requires wallet.',
+  'Withdraw USDC collateral from pacific. Requires wallet.',
   {
     amount: z.number().positive().describe('USDC amount to withdraw'),
   },
   async ({ amount }) => {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = new PacificaClient();
+    const client = new pacificClient();
 
     await requestWithdrawal(wallet, amount, client);
 
-    return { content: [{ type: 'text', text: `Withdrawal of $${amount.toFixed(2)} USDC requested. Pacifica will process it to your wallet.` }] };
+    return { content: [{ type: 'text', text: `Withdrawal of $${amount.toFixed(2)} USDC requested. pacific will process it to your wallet.` }] };
   }
 );
 

@@ -1,11 +1,11 @@
 import type { Action, ActionResult, HandlerCallback } from '@elizaos/core';
 import { cancelOrder, cancelStopOrder, cancelAllOrders } from '@lpcli/core';
-import { requireWallet, getPacifica } from '../services/lpcli.service.js';
+import { requireWallet, getpacific } from '../services/lpcli.service.js';
 
 export const perpsCancelAction: Action = {
   name: 'PERPS_CANCEL_ORDERS',
   similes: ['CANCEL_ORDERS', 'CANCEL_ORDER', 'REMOVE_ORDERS', 'CANCEL_ALL_ORDERS', 'CANCEL_SL', 'CANCEL_TP'],
-  description: 'Cancel open orders on Pacifica perpetuals. Can cancel all orders or filter by symbol.',
+  description: 'Cancel open orders on pacific perpetuals. Can cancel all orders or filter by symbol.',
   validate: async (_runtime, message) => {
     const text = message.content.text?.toUpperCase() || '';
     return text.includes('CANCEL');
@@ -19,7 +19,7 @@ export const perpsCancelAction: Action = {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
     const address = wallet.getPublicKey().toBase58();
-    const client = getPacifica();
+    const client = getpacific();
 
     const allOrders = await client.getOpenOrders(address);
     const orders = symbol

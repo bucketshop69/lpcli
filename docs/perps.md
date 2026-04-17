@@ -1,11 +1,11 @@
-# Pacifica Perps CLI
+# pacific Perps CLI
 
-Trade perpetual futures on [Pacifica](https://pacifica.fi) via `lpcli perps`.
+Trade perpetual futures on [pacific](https://pacific.fi) via `lpcli perps`.
 
 ## Setup
 
 1. Ensure OWS wallet is configured (`lpcli` uses the wallet specified in `config.json`)
-2. Deposit USDC to create your Pacifica account (minimum $10)
+2. Deposit USDC to create your pacific account (minimum $10)
 
 ```bash
 lpcli perps deposit 50
@@ -45,7 +45,7 @@ lpcli perps cancel                     # Cancel all open orders
 
 ### Limit Orders (price-based)
 
-Standard limit orders are sent to Pacifica and executed server-side when price is hit.
+Standard limit orders are sent to pacific and executed server-side when price is hit.
 
 ```bash
 lpcli perps limit SOL long 0.1 --price 80      # Buy 0.1 SOL at $80
@@ -99,7 +99,7 @@ Notes:
 
 ### Stop-Loss & Take-Profit
 
-Price-based SL/TP orders are managed server-side by Pacifica.
+Price-based SL/TP orders are managed server-side by pacific.
 
 ```bash
 lpcli perps sl SOL 80                  # Stop-loss at $80

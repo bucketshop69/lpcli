@@ -1,8 +1,8 @@
 /**
- * Pacifica Indicators E2E Tests
+ * pacific Indicators E2E Tests
  *
  * Tests 1-3: Pure logic — RSI calculation, no network.
- * Tests 4-5: Live Pacifica API — fetchRSI.
+ * Tests 4-5: Live pacific API — fetchRSI.
  *
  * NO signing, NO wallet.
  *
@@ -63,5 +63,5 @@ describe('fetchRSI (live API)', { concurrency: false }, () => {
 });
 
 console.log(`
-Pacifica Indicators E2E Tests
+pacific Indicators E2E Tests
 `);

@@ -5,7 +5,7 @@ import { requireWallet } from '../services/lpcli.service.js';
 export const perpsWithdrawAction: Action = {
   name: 'PERPS_WITHDRAW',
   similes: ['WITHDRAW', 'PULL_FUNDS', 'WITHDRAW_USDC', 'TAKE_OUT', 'WITHDRAW_COLLATERAL'],
-  description: 'Withdraw USDC from Pacifica perpetuals account.',
+  description: 'Withdraw USDC from pacific perpetuals account.',
   validate: async (_runtime, message) => {
     const text = message.content.text?.toUpperCase() || '';
     return text.includes('WITHDRAW') || text.includes('PULL');
@@ -22,7 +22,7 @@ export const perpsWithdrawAction: Action = {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
 
-    await callback?.({ text: `Withdrawing $${amount} USDC from Pacifica...` } as Parameters<HandlerCallback>[0]);
+    await callback?.({ text: `Withdrawing $${amount} USDC from pacific...` } as Parameters<HandlerCallback>[0]);
 
     await requestWithdrawal(wallet, amount);
 
@@ -33,8 +33,8 @@ export const perpsWithdrawAction: Action = {
   },
   examples: [
     [
-      { name: '{{user1}}', content: { text: 'Withdraw 20 USDC from Pacifica' } },
-      { name: 'lpcli', content: { text: 'Withdrawing $20 USDC from your Pacifica account.' } },
+      { name: '{{user1}}', content: { text: 'Withdraw 20 USDC from pacific' } },
+      { name: 'lpcli', content: { text: 'Withdrawing $20 USDC from your pacific account.' } },
     ],
   ],
 };

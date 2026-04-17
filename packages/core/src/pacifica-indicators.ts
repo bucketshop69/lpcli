@@ -1,12 +1,12 @@
 // ============================================================================
-// Pacifica Indicators — @lpcli/core
+// pacific Indicators — @lpcli/core
 //
-// Technical indicators calculated from Pacifica kline data.
+// Technical indicators calculated from pacific kline data.
 // Read-only, no signing required.
 // ============================================================================
 
-import { PacificaClient } from './pacifica-client.js';
-import type { PacificaKlineInterval } from './pacifica-client.js';
+import { pacificClient } from './pacific-client.js';
+import type { pacificKlineInterval } from './pacific-client.js';
 
 // ============================================================================
 // RSI — Wilder's 14-period smoothed RSI
@@ -57,7 +57,7 @@ export function calculateRSI(closes: number[], period = 14): number | null {
 // Fetch RSI for a symbol
 // ============================================================================
 
-const INTERVAL_MS: Record<PacificaKlineInterval, number> = {
+const INTERVAL_MS: Record<pacificKlineInterval, number> = {
   '1m': 60_000,
   '5m': 300_000,
   '15m': 900_000,
@@ -72,7 +72,7 @@ const INTERVAL_MS: Record<PacificaKlineInterval, number> = {
 
 export interface RSIResult {
   symbol: string;
-  interval: PacificaKlineInterval;
+  interval: pacificKlineInterval;
   rsi: number;
   price: number;
   zone: 'overbought' | 'oversold' | 'neutral';
@@ -84,11 +84,11 @@ export interface RSIResult {
  */
 export async function fetchRSI(
   symbol: string,
-  interval: PacificaKlineInterval = '15m',
+  interval: pacificKlineInterval = '15m',
   period = 14,
-  client?: PacificaClient,
+  client?: pacificClient,
 ): Promise<RSIResult> {
-  const c = client ?? new PacificaClient();
+  const c = client ?? new pacificClient();
   const now = Date.now();
   const intervalMs = INTERVAL_MS[interval];
   const startTime = now - 200 * intervalMs;

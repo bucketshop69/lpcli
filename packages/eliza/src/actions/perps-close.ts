@@ -1,6 +1,6 @@
 import type { Action, ActionResult, HandlerCallback } from '@elizaos/core';
 import { closePosition } from '@lpcli/core';
-import { requireWallet, getPacifica } from '../services/lpcli.service.js';
+import { requireWallet, getpacific } from '../services/lpcli.service.js';
 
 export const perpsCloseAction: Action = {
   name: 'PERPS_CLOSE',
@@ -21,7 +21,7 @@ export const perpsCloseAction: Action = {
 
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = getPacifica();
+    const client = getpacific();
 
     await callback?.({ text: `Closing ${symbol} position...` } as Parameters<HandlerCallback>[0]);
 

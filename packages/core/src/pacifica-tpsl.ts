@@ -1,14 +1,14 @@
 // ============================================================================
-// Pacifica TP/SL — @lpcli/core
+// pacific TP/SL — @lpcli/core
 //
 // Set take-profit and stop-loss on existing positions via signed REST.
-// All signing goes through signPacificaRequest (OWS).
+// All signing goes through signpacificRequest (OWS).
 // ============================================================================
 
 import { randomUUID } from 'node:crypto';
 import type { WalletService } from './wallet.js';
-import { signPacificaRequest } from './pacifica.js';
-import { PacificaClient } from './pacifica-client.js';
+import { signpacificRequest } from './pacific.js';
+import { pacificClient } from './pacific-client.js';
 
 // ============================================================================
 // Types
@@ -47,9 +47,9 @@ export interface TPSLParams {
 export async function setPositionTPSL(
   wallet: WalletService,
   params: TPSLParams,
-  client?: PacificaClient,
+  client?: pacificClient,
 ): Promise<void> {
-  const c = client ?? new PacificaClient();
+  const c = client ?? new pacificClient();
   const address = wallet.getPublicKey().toBase58();
 
   // Find the position to determine close side
@@ -96,6 +96,6 @@ export async function setPositionTPSL(
     expiry_window: 5000,
   };
 
-  const envelope = await signPacificaRequest(wallet, header, payload);
+  const envelope = await signpacificRequest(wallet, header, payload);
   await c.postSigned('/positions/tpsl', envelope);
 }

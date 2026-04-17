@@ -1,12 +1,12 @@
 /**
- * `lpcli perps` — Pacifica perpetuals operations.
+ * `lpcli perps` — pacific perpetuals operations.
  *
  * Usage:
- *   lpcli perps balance                                    Show Pacifica account balance
+ *   lpcli perps balance                                    Show pacific account balance
  *   lpcli perps positions                                  List open positions with PnL
  *   lpcli perps position <symbol>                          Detailed view of a position
- *   lpcli perps deposit <amount>  [--yes]                  Deposit USDC to Pacifica
- *   lpcli perps withdraw <amount> [--yes]                  Withdraw USDC from Pacifica
+ *   lpcli perps deposit <amount>  [--yes]                  Deposit USDC to pacific
+ *   lpcli perps withdraw <amount> [--yes]                  Withdraw USDC from pacific
  *   lpcli perps trade <symbol> <long|short> <size> [--yes] Place a market order
  *   lpcli perps close <symbol> [--yes]                     Close an open position
  *   lpcli perps cancel [symbol] [--yes]                     Cancel open orders (filter by symbol)
@@ -15,7 +15,7 @@
 import { createInterface } from 'node:readline';
 import {
   LPCLI,
-  PacificaClient,
+  pacificClient,
   buildDepositTransaction,
   requestWithdrawal,
   createMarketOrder,
@@ -27,10 +27,10 @@ import {
   roundToLotSize,
   setPositionTPSL,
   fetchRSI,
-  PACIFICA_MIN_DEPOSIT_USDC,
-  PACIFICA_KLINE_INTERVALS,
+  pacific_MIN_DEPOSIT_USDC,
+  pacific_KLINE_INTERVALS,
 } from '@lpcli/core';
-import type { PacificaKlineInterval } from '@lpcli/core';
+import type { pacificKlineInterval } from '@lpcli/core';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -75,12 +75,12 @@ async function showBalance(): Promise<void> {
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
   const address = wallet.getPublicKey().toBase58();
-  const client = new PacificaClient();
+  const client = new pacificClient();
 
   try {
     const info = await client.getAccountInfo(address);
 
-    console.log(`\nPacifica Account: ${address}`);
+    console.log(`\npacific Account: ${address}`);
     console.log('─'.repeat(50));
     console.log(`  Balance:            $${parseFloat(info.balance).toFixed(2)}`);
     console.log(`  Account Equity:     $${parseFloat(info.account_equity).toFixed(2)}`);
@@ -97,7 +97,7 @@ async function showBalance(): Promise<void> {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('404') || msg.toLowerCase().includes('not found')) {
-      console.log(`\nPacifica Account: ${address}`);
+      console.log(`\npacific Account: ${address}`);
       console.log('  No account found. Deposit USDC to create your account.');
       console.log('  Usage: lpcli perps deposit <amount>\n');
     } else {
@@ -117,8 +117,8 @@ async function runDeposit(args: string[]): Promise<void> {
   }
 
   const amount = parseFloat(amountRaw);
-  if (isNaN(amount) || amount < PACIFICA_MIN_DEPOSIT_USDC) {
-    console.error(`Minimum deposit is $${PACIFICA_MIN_DEPOSIT_USDC} USDC (Pacifica requirement).`);
+  if (isNaN(amount) || amount < pacific_MIN_DEPOSIT_USDC) {
+    console.error(`Minimum deposit is $${pacific_MIN_DEPOSIT_USDC} USDC (pacific requirement).`);
     process.exit(1);
   }
 
@@ -136,7 +136,7 @@ async function runDeposit(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`\nDeposit to Pacifica:`);
+  console.log(`\nDeposit to pacific:`);
   console.log(`  Wallet: ${pubkey.toBase58()}`);
   console.log(`  Amount: $${amount.toFixed(2)} USDC`);
   console.log(`  USDC Balance: $${available.toFixed(2)}`);
@@ -155,7 +155,7 @@ async function runDeposit(args: string[]): Promise<void> {
   const sig = await connection.sendRawTransaction(signed.serialize());
   console.log(`Sent: ${sig}`);
   await connection.confirmTransaction(sig, 'confirmed');
-  console.log(`Confirmed! Deposited $${amount.toFixed(2)} USDC to Pacifica.`);
+  console.log(`Confirmed! Deposited $${amount.toFixed(2)} USDC to pacific.`);
   console.log(`https://solscan.io/tx/${sig}\n`);
 }
 
@@ -171,14 +171,14 @@ async function runWithdraw(args: string[]): Promise<void> {
 
   const amount = parseFloat(amountRaw);
   if (isNaN(amount) || amount < 1) {
-    console.error('Amount must be at least $1 (Pacifica minimum).');
+    console.error('Amount must be at least $1 (pacific minimum).');
     process.exit(1);
   }
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
   const address = wallet.getPublicKey().toBase58();
-  const client = new PacificaClient();
+  const client = new pacificClient();
 
   // Check available to withdraw
   let availableToWithdraw = 0;
@@ -186,7 +186,7 @@ async function runWithdraw(args: string[]): Promise<void> {
     const info = await client.getAccountInfo(address);
     availableToWithdraw = parseFloat(info.available_to_withdraw);
   } catch {
-    console.error('Could not fetch account info. Is your account registered on Pacifica?');
+    console.error('Could not fetch account info. Is your account registered on pacific?');
     process.exit(1);
   }
 
@@ -195,7 +195,7 @@ async function runWithdraw(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`\nWithdraw from Pacifica:`);
+  console.log(`\nWithdraw from pacific:`);
   console.log(`  Wallet: ${address}`);
   console.log(`  Amount: $${amount.toFixed(2)} USDC`);
   console.log(`  Available: $${availableToWithdraw.toFixed(2)}`);
@@ -212,11 +212,11 @@ async function runWithdraw(args: string[]): Promise<void> {
 
   await requestWithdrawal(wallet, amount, client);
   console.log(`Withdrawal of $${amount.toFixed(2)} USDC requested.`);
-  console.log('Note: Pacifica processes withdrawals to your wallet. Check your balance shortly.\n');
+  console.log('Note: pacific processes withdrawals to your wallet. Check your balance shortly.\n');
 }
 
 async function showMarkets(): Promise<void> {
-  const client = new PacificaClient();
+  const client = new pacificClient();
   const [markets, prices] = await Promise.all([
     client.getMarkets(),
     client.getPrices(),
@@ -233,7 +233,7 @@ async function showMarkets(): Promise<void> {
 
   const top = sorted.slice(0, 10);
 
-  console.log(`\nPacifica Markets (top ${top.length} by volume):`);
+  console.log(`\npacific Markets (top ${top.length} by volume):`);
   console.log('─'.repeat(85));
   console.log(
     '  Symbol'.padEnd(12) +
@@ -279,7 +279,7 @@ async function showMarket(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const client = new PacificaClient();
+  const client = new pacificClient();
   const [markets, prices] = await Promise.all([
     client.getMarkets(),
     client.getPrices(),
@@ -322,7 +322,7 @@ async function showPositions(): Promise<void> {
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
   const address = wallet.getPublicKey().toBase58();
-  const client = new PacificaClient();
+  const client = new pacificClient();
 
   const [positions, prices, orders] = await Promise.all([
     client.getPositions(address),
@@ -385,7 +385,7 @@ async function showPosition(args: string[]): Promise<void> {
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
   const address = wallet.getPublicKey().toBase58();
-  const client = new PacificaClient();
+  const client = new pacificClient();
 
   const [positions, prices] = await Promise.all([
     client.getPositions(address),
@@ -455,7 +455,7 @@ async function runTrade(args: string[]): Promise<void> {
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
-  const client = new PacificaClient();
+  const client = new pacificClient();
 
   // Validate symbol and get lot size
   const markets = await client.getMarkets();
@@ -520,7 +520,7 @@ async function runClosePosition(args: string[]): Promise<void> {
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
-  const client = new PacificaClient();
+  const client = new pacificClient();
   const address = wallet.getPublicKey().toBase58();
 
   // Find the position
@@ -571,7 +571,7 @@ async function runCancel(args: string[]): Promise<void> {
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
-  const client = new PacificaClient();
+  const client = new pacificClient();
   const address = wallet.getPublicKey().toBase58();
 
   // Show current open orders
@@ -664,7 +664,7 @@ async function runStopLoss(args: string[]): Promise<void> {
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
-  const client = new PacificaClient();
+  const client = new pacificClient();
   const address = wallet.getPublicKey().toBase58();
 
   const positions = await client.getPositions(address);
@@ -719,7 +719,7 @@ async function runTakeProfit(args: string[]): Promise<void> {
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
-  const client = new PacificaClient();
+  const client = new pacificClient();
   const address = wallet.getPublicKey().toBase58();
 
   const positions = await client.getPositions(address);
@@ -778,7 +778,7 @@ async function runLimit(args: string[]): Promise<void> {
 
   const priceVal = priceIdx >= 0 ? args[priceIdx + 1] : undefined;
   const rsiVal = rsiIdx >= 0 ? args[rsiIdx + 1] : undefined;
-  const tfVal = (tfIdx >= 0 ? args[tfIdx + 1] : '15m') as PacificaKlineInterval;
+  const tfVal = (tfIdx >= 0 ? args[tfIdx + 1] : '15m') as pacificKlineInterval;
 
   if (!symbol || !direction) {
     console.error(`Usage:
@@ -811,7 +811,7 @@ Examples:
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
-  const client = new PacificaClient();
+  const client = new pacificClient();
 
   // --- CLOSE mode: determine side and size from position ---
   let side: 'bid' | 'ask';
@@ -887,8 +887,8 @@ Examples:
     process.exit(1);
   }
 
-  if (!PACIFICA_KLINE_INTERVALS.includes(tfVal)) {
-    console.error(`Invalid timeframe. Valid: ${PACIFICA_KLINE_INTERVALS.join(', ')}`);
+  if (!pacific_KLINE_INTERVALS.includes(tfVal)) {
+    console.error(`Invalid timeframe. Valid: ${pacific_KLINE_INTERVALS.join(', ')}`);
     process.exit(1);
   }
 
@@ -963,17 +963,17 @@ Examples:
 
 async function showRSI(args: string[]): Promise<void> {
   const symbol = args[0]?.toUpperCase();
-  const interval = (args[1] ?? '15m') as PacificaKlineInterval;
+  const interval = (args[1] ?? '15m') as pacificKlineInterval;
 
   if (!symbol) {
     console.error('Usage: lpcli perps rsi <symbol> [timeframe]');
-    console.error(`  timeframes: ${PACIFICA_KLINE_INTERVALS.join(', ')} (default: 15m)`);
+    console.error(`  timeframes: ${pacific_KLINE_INTERVALS.join(', ')} (default: 15m)`);
     process.exit(1);
   }
 
-  if (!PACIFICA_KLINE_INTERVALS.includes(interval)) {
+  if (!pacific_KLINE_INTERVALS.includes(interval)) {
     console.error(`Invalid timeframe: ${interval}`);
-    console.error(`  Valid: ${PACIFICA_KLINE_INTERVALS.join(', ')}`);
+    console.error(`  Valid: ${pacific_KLINE_INTERVALS.join(', ')}`);
     process.exit(1);
   }
 
@@ -981,8 +981,8 @@ async function showRSI(args: string[]): Promise<void> {
 
   const zoneLabel =
     result.zone === 'overbought' ? 'OVERBOUGHT (>60)' :
-    result.zone === 'oversold' ? 'OVERSOLD (<40)' :
-    'NEUTRAL';
+      result.zone === 'oversold' ? 'OVERSOLD (<40)' :
+        'NEUTRAL';
 
   console.log(`\n${result.symbol} ${result.interval} RSI: ${result.rsi.toFixed(1)}`);
   console.log(`  Zone:   ${zoneLabel}`);
@@ -1060,7 +1060,7 @@ export async function runPerps(args: string[]): Promise<void> {
       case '--help':
       case '-h':
         console.log(`
-lpcli perps — Pacifica perpetuals
+lpcli perps — pacific perpetuals
 
 Usage:
   lpcli perps balance                             Show account balance & margin
@@ -1068,8 +1068,8 @@ Usage:
   lpcli perps position <symbol>                   Detailed view of a position
   lpcli perps markets                             List all available markets
   lpcli perps market <symbol>                     Detailed view of a market
-  lpcli perps deposit <amount>                    Deposit USDC to Pacifica
-  lpcli perps withdraw <amount>                   Withdraw USDC from Pacifica
+  lpcli perps deposit <amount>                    Deposit USDC to pacific
+  lpcli perps withdraw <amount>                   Withdraw USDC from pacific
   lpcli perps trade <symbol> <long|short> <size>  Place a market order
   lpcli perps close <symbol>                      Close an open position
   lpcli perps cancel [symbol]                      Cancel open orders (optional symbol filter)

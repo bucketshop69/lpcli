@@ -1,6 +1,6 @@
 ---
 name: lpcli
-description: Agentic DeFi platform on Solana — Meteora DLMM liquidity, Pacifica perpetuals, Jupiter swaps, RSI indicators. CLI, MCP, and ElizaOS interfaces.
+description: Agentic DeFi platform on Solana — Meteora DLMM liquidity, pacific perpetuals, Jupiter swaps, RSI indicators. CLI, MCP, and ElizaOS interfaces.
 metadata:
   author: lpcli
   version: "0.5.0"
@@ -10,7 +10,7 @@ tags:
   - liquidity
   - solana
   - perps
-  - pacifica
+  - pacific
   - jupiter
   - swap
   - defi
@@ -18,7 +18,7 @@ tags:
 
 # LPCLI — Agentic DeFi Platform for Solana
 
-You are an expert DeFi agent managing liquidity positions, perpetual trades, and token swaps on Solana. You have access to LPCLI tools for Meteora DLMM, Pacifica perps, and Jupiter swaps.
+You are an expert DeFi agent managing liquidity positions, perpetual trades, and token swaps on Solana. You have access to LPCLI tools for Meteora DLMM, pacific perps, and Jupiter swaps.
 
 LPCLI uses OWS (Open Wallet Standard) for transaction signing — no raw private keys. All wallet operations require OWS to be installed and a wallet to be configured.
 
@@ -80,19 +80,19 @@ Claim accumulated swap fees without closing the position.
 **Parameters:**
 - `position` (required): Position address
 
-### Pacifica Perpetuals
+### pacific Perpetuals
 
 #### perps_list_markets (no wallet needed)
-List all available Pacifica perpetual markets with prices, funding rates, 24h volume, open interest, and max leverage.
+List all available pacific perpetual markets with prices, funding rates, 24h volume, open interest, and max leverage.
 
 #### perps_get_account (requires wallet)
-Get Pacifica perps account balance, equity, margin used, and available funds.
+Get pacific perps account balance, equity, margin used, and available funds.
 
 #### perps_get_positions (requires wallet)
-List open Pacifica perps positions with live PnL, entry price, mark price, leverage, and liquidation price.
+List open pacific perps positions with live PnL, entry price, mark price, leverage, and liquidation price.
 
 #### perps_execute_trade (requires wallet)
-Place a market order on Pacifica perps. Opens a long or short position.
+Place a market order on pacific perps. Opens a long or short position.
 
 **Parameters:**
 - `symbol` (required): Market symbol (e.g. "SOL", "BTC", "ETH")
@@ -101,7 +101,7 @@ Place a market order on Pacifica perps. Opens a long or short position.
 - `leverage` (optional): Leverage multiplier (default: 1)
 
 #### perps_close_position (requires wallet)
-Close an open Pacifica perps position with a reduce-only market order.
+Close an open pacific perps position with a reduce-only market order.
 
 **Parameters:**
 - `symbol` (required): Market symbol
@@ -121,13 +121,13 @@ Set a take-profit on an existing position. Triggers a reduce-only close if price
 - `price` (required): Take-profit trigger price
 
 #### perps_deposit (requires wallet)
-Deposit USDC collateral to Pacifica perps account.
+Deposit USDC collateral to pacific perps account.
 
 **Parameters:**
 - `amount` (required): USDC amount
 
 #### perps_withdraw (requires wallet)
-Withdraw USDC collateral from Pacifica perps account.
+Withdraw USDC collateral from pacific perps account.
 
 **Parameters:**
 - `amount` (required): USDC amount
@@ -174,7 +174,7 @@ lpcli close <position_address> --pool <pool>  # Direct close (scripting)
 lpcli claim <position_address>
 ```
 
-### Perpetuals (Pacifica)
+### Perpetuals (pacific)
 ```bash
 lpcli perps markets                           # List all markets with prices/funding
 lpcli perps market SOL                        # Detailed view of SOL market
@@ -299,5 +299,5 @@ lpcli eliza --model qwen3:8b                  # Specify LLM model
 - Close is free — never hesitate to exit a bad LP position
 - 0.02 SOL is reserved for transaction fees and never swapped away
 - Position rent (~0.06 SOL) is refunded when you close an LP position
-- Perps require USDC deposited to Pacifica before trading
+- Perps require USDC deposited to pacific before trading
 - Funding rates are paid every 8 hours — factor into position holding cost

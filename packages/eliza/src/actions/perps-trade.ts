@@ -1,11 +1,11 @@
 import type { Action, ActionResult, HandlerCallback } from '@elizaos/core';
 import { createMarketOrder, roundToLotSize } from '@lpcli/core';
-import { requireWallet, getPacifica } from '../services/lpcli.service.js';
+import { requireWallet, getpacific } from '../services/lpcli.service.js';
 
 export const perpsTradeAction: Action = {
   name: 'PERPS_TRADE',
   similes: ['LONG', 'SHORT', 'BUY_PERPS', 'SELL_PERPS', 'OPEN_TRADE', 'PLACE_TRADE', 'GO_LONG', 'GO_SHORT'],
-  description: 'Place a market order on Pacifica perpetuals. Specify symbol, direction (long/short), and size. Example: "Long 0.5 SOL"',
+  description: 'Place a market order on pacific perpetuals. Specify symbol, direction (long/short), and size. Example: "Long 0.5 SOL"',
   validate: async (_runtime, message) => {
     const text = message.content.text?.toUpperCase() || '';
     return text.includes('LONG') || text.includes('SHORT') || text.includes('TRADE');
@@ -34,7 +34,7 @@ export const perpsTradeAction: Action = {
 
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = getPacifica();
+    const client = getpacific();
 
     // Validate and round to lot size
     const market = await client.getMarkets().then(ms => ms.find(m => m.symbol === symbol));
@@ -68,7 +68,7 @@ export const perpsTradeAction: Action = {
   examples: [
     [
       { name: '{{user1}}', content: { text: 'Long 0.5 SOL' } },
-      { name: 'lpcli', content: { text: 'Placing a long position for 0.5 SOL on Pacifica.' } },
+      { name: 'lpcli', content: { text: 'Placing a long position for 0.5 SOL on pacific.' } },
     ],
     [
       { name: '{{user1}}', content: { text: 'Short 0.01 BTC' } },

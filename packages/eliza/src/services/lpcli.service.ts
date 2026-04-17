@@ -1,17 +1,17 @@
 /**
- * LpcliService — singleton LPCLI + PacificaClient for ElizaOS actions.
+ * LpcliService — singleton LPCLI + pacificClient for ElizaOS actions.
  *
  * Mirrors the MCP server singleton pattern (packages/mcp/src/index.ts:47-66).
  * Read-only operations use publicKey from the message context.
  * Write operations return unsigned payloads for browser signing.
  */
 
-import { LPCLI, PacificaClient } from '@lpcli/core';
+import { LPCLI, pacificClient } from '@lpcli/core';
 import type { ReadinessStatus, LPCLIConfig } from '@lpcli/core';
 import type { IAgentRuntime } from '@elizaos/core';
 
 let _lpcli: LPCLI | null = null;
-let _pacifica: PacificaClient | null = null;
+let _pacific: pacificClient | null = null;
 let _readiness: ReadinessStatus | null = null;
 
 export function initService(runtime: IAgentRuntime): void {
@@ -26,7 +26,7 @@ export function initService(runtime: IAgentRuntime): void {
   }
 
   _lpcli = new LPCLI(config);
-  _pacifica = new PacificaClient();
+  _pacific = new pacificClient();
 }
 
 export function getLpcli(): LPCLI {
@@ -34,9 +34,9 @@ export function getLpcli(): LPCLI {
   return _lpcli;
 }
 
-export function getPacifica(): PacificaClient {
-  if (!_pacifica) _pacifica = new PacificaClient();
-  return _pacifica;
+export function getpacific(): pacificClient {
+  if (!_pacific) _pacific = new pacificClient();
+  return _pacific;
 }
 
 /** Check wallet readiness (OWS available). */

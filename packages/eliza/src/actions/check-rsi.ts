@@ -1,6 +1,6 @@
 import type { Action, ActionResult, HandlerCallback } from '@elizaos/core';
 import { fetchRSI } from '@lpcli/core';
-import type { PacificaKlineInterval } from '@lpcli/core';
+import type { pacificKlineInterval } from '@lpcli/core';
 
 export const checkRsiAction: Action = {
   name: 'CHECK_RSI',
@@ -19,7 +19,7 @@ export const checkRsiAction: Action = {
 
     // Extract timeframe if mentioned
     const tfMatch = text.match(/(\d+[mhd])/i);
-    const interval = (tfMatch?.[1]?.toLowerCase() || '15m') as PacificaKlineInterval;
+    const interval = (tfMatch?.[1]?.toLowerCase() || '15m') as pacificKlineInterval;
 
     const rsi = await fetchRSI(symbol, interval);
 

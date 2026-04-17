@@ -1,8 +1,8 @@
 /**
- * Pacifica Trade E2E Tests
+ * pacific Trade E2E Tests
  *
  * Tests 1-3: Pure logic — lot size validation, no OWS/RPC needed.
- * Tests 4-5: Live Pacifica API — read-only market/price data.
+ * Tests 4-5: Live pacific API — read-only market/price data.
  *
  * NO signing, NO wallet, NO order placement.
  *
@@ -14,15 +14,15 @@ import assert from 'node:assert/strict';
 import {
   roundToLotSize,
   validateOrder,
-  PacificaClient,
+  pacificClient,
 } from '../src/index.js';
-import type { PacificaMarketInfo } from '../src/index.js';
+import type { pacificMarketInfo } from '../src/index.js';
 
 // ---------------------------------------------------------------------------
 // Mock market for pure logic tests
 // ---------------------------------------------------------------------------
 
-const MOCK_BTC_MARKET: PacificaMarketInfo = {
+const MOCK_BTC_MARKET: pacificMarketInfo = {
   symbol: 'BTC',
   tick_size: '0.1',
   lot_size: '0.0001',
@@ -33,7 +33,7 @@ const MOCK_BTC_MARKET: PacificaMarketInfo = {
   isolated_only: false,
 };
 
-const MOCK_SOL_MARKET: PacificaMarketInfo = {
+const MOCK_SOL_MARKET: pacificMarketInfo = {
   symbol: 'SOL',
   tick_size: '0.001',
   lot_size: '0.1',
@@ -82,7 +82,7 @@ describe('roundToLotSize', { concurrency: false }, () => {
 describe('validateOrder (live API)', { concurrency: false }, () => {
 
   test('4: validates a known symbol', async () => {
-    const client = new PacificaClient();
+    const client = new pacificClient();
     const market = await validateOrder('BTC', 0.001, client);
 
     assert.strictEqual(market.symbol, 'BTC');
@@ -91,7 +91,7 @@ describe('validateOrder (live API)', { concurrency: false }, () => {
   });
 
   test('5: rejects unknown symbol', async () => {
-    const client = new PacificaClient();
+    const client = new pacificClient();
 
     await assert.rejects(
       () => validateOrder('DOESNOTEXIST999', 1, client),
@@ -106,5 +106,5 @@ describe('validateOrder (live API)', { concurrency: false }, () => {
 });
 
 console.log(`
-Pacifica Trade E2E Tests
+pacific Trade E2E Tests
 `);

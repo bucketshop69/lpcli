@@ -1,5 +1,5 @@
 import type { Action, ActionResult, HandlerCallback } from '@elizaos/core';
-import { getPacifica, requireWallet } from '../services/lpcli.service.js';
+import { getpacific, requireWallet } from '../services/lpcli.service.js';
 
 export const perpsPositionsAction: Action = {
   name: 'PERPS_POSITIONS',
@@ -10,7 +10,7 @@ export const perpsPositionsAction: Action = {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
     const address = wallet.getPublicKey().toBase58();
-    const client = getPacifica();
+    const client = getpacific();
 
     const [positions, prices, orders] = await Promise.all([
       client.getPositions(address),
