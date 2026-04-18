@@ -30,6 +30,7 @@ import { runClose } from './commands/close.js';
 import { runClaim } from './commands/claim.js';
 import { runSwap } from './commands/swap.js';
 import { runTransfer } from './commands/transfer.js';
+import { runMonitor } from './commands/monitor.js';
 
 const [, , command, ...args] = process.argv;
 
@@ -87,6 +88,10 @@ async function main(): Promise<void> {
       await runTransfer(args);
       break;
 
+    case 'monitor':
+      await runMonitor(args);
+      break;
+
     case undefined:
     case '--help':
     case '-h':
@@ -110,6 +115,7 @@ Usage:
   lpcli pacific                Pacifica perpetuals
   lpcli wallet                 Wallet operations (balance, transfer)
   lpcli transfer               Interactive token transfer (pick token → recipient → send)
+  lpcli monitor                Automated watchers (RSI, price, funding alerts + actions)
   lpcli predict                Polymarket prediction markets
   lpcli eliza                  Conversational DeFi agent
 

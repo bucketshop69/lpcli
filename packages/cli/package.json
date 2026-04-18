@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.2.0",
-    "@lpcli/core": "workspace:*"
+    "@lpcli/core": "workspace:*",
+    "@lpcli/monitor": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
