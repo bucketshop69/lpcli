@@ -1,5 +1,5 @@
 /**
- * pacific Signing E2E Tests
+ * Pacifica Signing E2E Tests
  *
  * Tests 1-3, 7: Pure logic — no OWS needed, always run.
  * Tests 4-6: Require OWS wallet "lpcli" — skip gracefully if unavailable.
@@ -11,7 +11,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { preparepacificMessage, signpacificRequest, WalletService } from '../src/index.js';
+import { preparePacificaMessage, signPacificaRequest, WalletService } from '../src/index.js';
 
 const DUMMY_RPC = 'https://api.mainnet-beta.solana.com';
 
@@ -32,7 +32,7 @@ async function tryInitWallet(): Promise<WalletService | null> {
 // Pure logic tests (no OWS)
 // ---------------------------------------------------------------------------
 
-describe('preparepacificMessage', { concurrency: false }, () => {
+describe('preparePacificaMessage', { concurrency: false }, () => {
 
   test('1: sorts keys recursively and produces compact JSON', () => {
     const header = { type: 'create_market_order', timestamp: 1700000000000, expiry_window: 5000 };
@@ -45,7 +45,7 @@ describe('preparepacificMessage', { concurrency: false }, () => {
       client_order_id: 'test-uuid',
     };
 
-    const result = preparepacificMessage(header, payload);
+    const result = preparePacificaMessage(header, payload);
 
     // No spaces anywhere
     assert.ok(!result.includes(' '), 'output should have no spaces');
@@ -77,23 +77,23 @@ describe('preparepacificMessage', { concurrency: false }, () => {
     const header = { timestamp: 1700000000000, expiry_window: 5000, type: 'cancel_all_orders' };
     const payload = {};
 
-    const result1 = preparepacificMessage(header, payload);
-    const result2 = preparepacificMessage(header, payload);
+    const result1 = preparePacificaMessage(header, payload);
+    const result2 = preparePacificaMessage(header, payload);
 
     assert.strictEqual(result1, result2, 'identical inputs should produce identical output');
   });
 
   test('3: throws on missing header fields', () => {
     assert.throws(
-      () => preparepacificMessage({ type: 'x', timestamp: 1 } as any, {}),
+      () => preparePacificaMessage({ type: 'x', timestamp: 1 } as any, {}),
       /expiry_window/,
     );
     assert.throws(
-      () => preparepacificMessage({ type: 'x', expiry_window: 1 } as any, {}),
+      () => preparePacificaMessage({ type: 'x', expiry_window: 1 } as any, {}),
       /timestamp/,
     );
     assert.throws(
-      () => preparepacificMessage({ timestamp: 1, expiry_window: 1 } as any, {}),
+      () => preparePacificaMessage({ timestamp: 1, expiry_window: 1 } as any, {}),
       /type/,
     );
   });
@@ -122,7 +122,7 @@ describe('WalletService.signMessage', { concurrency: false }, () => {
 
 });
 
-describe('signpacificRequest', { concurrency: false }, () => {
+describe('signPacificaRequest', { concurrency: false }, () => {
 
   test('5: full round-trip — sign and verify', async () => {
     const wallet = await tryInitWallet();
@@ -138,7 +138,7 @@ describe('signpacificRequest', { concurrency: false }, () => {
       client_order_id: 'e2e-test',
     };
 
-    const envelope = await signpacificRequest(wallet, header, payload);
+    const envelope = await signPacificaRequest(wallet, header, payload);
 
     // Envelope shape
     assert.strictEqual(envelope.account, wallet.getPublicKey().toBase58());
@@ -150,28 +150,27 @@ describe('signpacificRequest', { concurrency: false }, () => {
 
     // Verify signature
     const sigBytes = bs58.decode(envelope.signature);
-    const message = preparepacificMessage(header, payload);
+    const message = preparePacificaMessage(header, payload);
     const messageBytes = new TextEncoder().encode(message);
     const pubkey = wallet.getPublicKey();
     const valid = nacl.sign.detached.verify(messageBytes, sigBytes, pubkey.toBytes());
     assert.ok(valid, 'envelope signature should verify');
   });
 
-  test('6: live pacific API smoke test', async () => {
+  test('6: live Pacifica API smoke test', async () => {
     const wallet = await tryInitWallet();
     if (!wallet) return;
 
     const pubkey = wallet.getPublicKey().toBase58();
-    const resp = await fetch(`https://api.pacific.fi/api/v1/account?account=${pubkey}`);
+    const resp = await fetch(`https://api.pacifica.fi/api/v1/account?account=${pubkey}`);
     const body = await resp.json() as { success: boolean; error?: string; code?: number };
 
     if (resp.status === 404) {
-      // Account not yet registered on pacific — API is reachable, that's the smoke test
       assert.strictEqual(body.code, 404, 'should return 404 code for unknown account');
       assert.ok(typeof body.error === 'string', 'should have error message');
     } else {
-      assert.ok(resp.ok, `pacific API responded ${resp.status}`);
-      assert.strictEqual(body.success, true, 'pacific API should return success');
+      assert.ok(resp.ok, `Pacifica API responded ${resp.status}`);
+      assert.strictEqual(body.success, true, 'Pacifica API should return success');
     }
   });
 
@@ -181,7 +180,7 @@ describe('signpacificRequest', { concurrency: false }, () => {
 // Nested sorting test (no OWS)
 // ---------------------------------------------------------------------------
 
-describe('preparepacificMessage nested sorting', { concurrency: false }, () => {
+describe('preparePacificaMessage nested sorting', { concurrency: false }, () => {
 
   test('7: nested payload keys (TPSL) are sorted', () => {
     const header = { type: 'set_position_tpsl', timestamp: 1700000000000, expiry_window: 5000 };
@@ -195,7 +194,7 @@ describe('preparepacificMessage nested sorting', { concurrency: false }, () => {
       },
     };
 
-    const result = preparepacificMessage(header, payload);
+    const result = preparePacificaMessage(header, payload);
     const parsed = JSON.parse(result);
 
     const slKeys = Object.keys(parsed.data.stop_loss);
@@ -206,5 +205,5 @@ describe('preparepacificMessage nested sorting', { concurrency: false }, () => {
 });
 
 console.log(`
-pacific Signing E2E Tests
+Pacifica Signing E2E Tests
 `);

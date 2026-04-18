@@ -2,14 +2,14 @@
 // pacific Trade — @lpcli/core
 //
 // Market orders, cancel orders via signed REST requests.
-// All signing goes through signpacificRequest (OWS).
+// All signing goes through signPacificaRequest (OWS).
 // ============================================================================
 
 import { randomUUID } from 'node:crypto';
 import type { WalletService } from './wallet.js';
-import { signpacificRequest } from './pacific.js';
-import { pacificClient } from './pacific-client.js';
-import type { pacificMarketInfo } from './pacific-client.js';
+import { signPacificaRequest } from './pacifica.js';
+import { PacificaClient } from './pacifica-client.js';
+import type { PacificaMarketInfo } from './pacifica-client.js';
 
 // ============================================================================
 // Types
@@ -56,7 +56,7 @@ export interface MarketOrderResult {
  * Round an order size down to the nearest valid lot_size for the given market.
  * Returns 0 if the amount is smaller than lot_size.
  */
-export function roundToLotSize(amount: number, market: pacificMarketInfo): number {
+export function roundToLotSize(amount: number, market: PacificaMarketInfo): number {
   const lotSize = parseFloat(market.lot_size);
   if (lotSize <= 0) return amount;
   return Math.floor(amount / lotSize) * lotSize;
@@ -69,8 +69,8 @@ export function roundToLotSize(amount: number, market: pacificMarketInfo): numbe
 export async function validateOrder(
   symbol: string,
   amount: number,
-  client: pacificClient,
-): Promise<pacificMarketInfo> {
+  client: PacificaClient,
+): Promise<PacificaMarketInfo> {
   const markets = await client.getMarkets();
   const market = markets.find((m) => m.symbol.toUpperCase() === symbol.toUpperCase());
   if (!market) {
@@ -100,9 +100,9 @@ export async function validateOrder(
 export async function createMarketOrder(
   wallet: WalletService,
   params: MarketOrderParams,
-  client?: pacificClient,
+  client?: PacificaClient,
 ): Promise<MarketOrderResult> {
-  const c = client ?? new pacificClient();
+  const c = client ?? new PacificaClient();
 
   // Validate symbol & lot size
   const market = await validateOrder(params.symbol, params.amount, c);
@@ -128,7 +128,7 @@ export async function createMarketOrder(
     expiry_window: 5000,
   };
 
-  const envelope = await signpacificRequest(wallet, header, payload);
+  const envelope = await signPacificaRequest(wallet, header, payload);
   const result = await c.postSigned<{ order_id: number }>('/orders/create_market', envelope);
 
   return { orderId: result.order_id };
@@ -144,9 +144,9 @@ export async function createMarketOrder(
 export async function createLimitOrder(
   wallet: WalletService,
   params: LimitOrderParams,
-  client?: pacificClient,
+  client?: PacificaClient,
 ): Promise<MarketOrderResult> {
-  const c = client ?? new pacificClient();
+  const c = client ?? new PacificaClient();
 
   const market = await validateOrder(params.symbol, params.amount, c);
   const roundedAmount = roundToLotSize(params.amount, market);
@@ -172,7 +172,7 @@ export async function createLimitOrder(
     expiry_window: 5000,
   };
 
-  const envelope = await signpacificRequest(wallet, header, payload);
+  const envelope = await signPacificaRequest(wallet, header, payload);
   const result = await c.postSigned<{ order_id: number }>('/orders/create', envelope);
 
   return { orderId: result.order_id };
@@ -189,9 +189,9 @@ export async function cancelOrder(
   wallet: WalletService,
   orderId: number,
   symbol: string,
-  client?: pacificClient,
+  client?: PacificaClient,
 ): Promise<void> {
-  const c = client ?? new pacificClient();
+  const c = client ?? new PacificaClient();
 
   const payload: Record<string, unknown> = {
     symbol,
@@ -204,7 +204,7 @@ export async function cancelOrder(
     expiry_window: 5000,
   };
 
-  const envelope = await signpacificRequest(wallet, header, payload);
+  const envelope = await signPacificaRequest(wallet, header, payload);
   await c.postSigned('/orders/cancel', envelope);
 }
 
@@ -215,9 +215,9 @@ export async function cancelStopOrder(
   wallet: WalletService,
   orderId: number,
   symbol: string,
-  client?: pacificClient,
+  client?: PacificaClient,
 ): Promise<void> {
-  const c = client ?? new pacificClient();
+  const c = client ?? new PacificaClient();
 
   const payload: Record<string, unknown> = {
     symbol,
@@ -230,7 +230,7 @@ export async function cancelStopOrder(
     expiry_window: 5000,
   };
 
-  const envelope = await signpacificRequest(wallet, header, payload);
+  const envelope = await signPacificaRequest(wallet, header, payload);
   await c.postSigned('/orders/stop/cancel', envelope);
 }
 
@@ -243,9 +243,9 @@ export async function cancelStopOrder(
  */
 export async function cancelAllOrders(
   wallet: WalletService,
-  client?: pacificClient,
+  client?: PacificaClient,
 ): Promise<void> {
-  const c = client ?? new pacificClient();
+  const c = client ?? new PacificaClient();
 
   const payload: Record<string, unknown> = {
     all_symbols: true,
@@ -258,7 +258,7 @@ export async function cancelAllOrders(
     expiry_window: 5000,
   };
 
-  const envelope = await signpacificRequest(wallet, header, payload);
+  const envelope = await signPacificaRequest(wallet, header, payload);
   await c.postSigned('/orders/cancel_all', envelope);
 }
 
@@ -275,9 +275,9 @@ export async function cancelAllOrders(
 export async function closePosition(
   wallet: WalletService,
   symbol: string,
-  client?: pacificClient,
+  client?: PacificaClient,
 ): Promise<MarketOrderResult | null> {
-  const c = client ?? new pacificClient();
+  const c = client ?? new PacificaClient();
   const address = wallet.getPublicKey().toBase58();
 
   const positions = await c.getPositions(address);

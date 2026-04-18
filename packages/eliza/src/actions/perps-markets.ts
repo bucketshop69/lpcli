@@ -1,5 +1,5 @@
 import type { Action, ActionResult, HandlerCallback } from '@elizaos/core';
-import { getpacific } from '../services/lpcli.service.js';
+import { getPacifica } from '../services/lpcli.service.js';
 
 export const perpsMarketsAction: Action = {
   name: 'PERPS_LIST_MARKETS',
@@ -7,7 +7,7 @@ export const perpsMarketsAction: Action = {
   description: 'List available perpetual futures markets with prices, funding rates, and specs.',
   validate: async () => true,
   handler: async (_runtime, _message, _state, _options, callback): Promise<ActionResult> => {
-    const client = getpacific();
+    const client = getPacifica();
     const [markets, prices] = await Promise.all([
       client.getMarkets(),
       client.getPrices(),

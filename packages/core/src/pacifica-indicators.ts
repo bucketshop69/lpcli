@@ -5,8 +5,8 @@
 // Read-only, no signing required.
 // ============================================================================
 
-import { pacificClient } from './pacific-client.js';
-import type { pacificKlineInterval } from './pacific-client.js';
+import { PacificaClient } from './pacifica-client.js';
+import type { PacificaKlineInterval } from './pacifica-client.js';
 
 // ============================================================================
 // RSI — Wilder's 14-period smoothed RSI
@@ -57,7 +57,7 @@ export function calculateRSI(closes: number[], period = 14): number | null {
 // Fetch RSI for a symbol
 // ============================================================================
 
-const INTERVAL_MS: Record<pacificKlineInterval, number> = {
+const INTERVAL_MS: Record<PacificaKlineInterval, number> = {
   '1m': 60_000,
   '5m': 300_000,
   '15m': 900_000,
@@ -72,7 +72,7 @@ const INTERVAL_MS: Record<pacificKlineInterval, number> = {
 
 export interface RSIResult {
   symbol: string;
-  interval: pacificKlineInterval;
+  interval: PacificaKlineInterval;
   rsi: number;
   price: number;
   zone: 'overbought' | 'oversold' | 'neutral';
@@ -84,11 +84,11 @@ export interface RSIResult {
  */
 export async function fetchRSI(
   symbol: string,
-  interval: pacificKlineInterval = '15m',
+  interval: PacificaKlineInterval = '15m',
   period = 14,
-  client?: pacificClient,
+  client?: PacificaClient,
 ): Promise<RSIResult> {
-  const c = client ?? new pacificClient();
+  const c = client ?? new PacificaClient();
   const now = Date.now();
   const intervalMs = INTERVAL_MS[interval];
   const startTime = now - 200 * intervalMs;

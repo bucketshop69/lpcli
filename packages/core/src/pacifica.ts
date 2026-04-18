@@ -5,13 +5,13 @@ import type { WalletService } from './wallet.js';
 // Types
 // ============================================================================
 
-export interface pacificSignatureHeader {
+export interface PacificaSignatureHeader {
   type: string;
   timestamp: number;
   expiry_window: number;
 }
 
-export interface pacificRequestEnvelope {
+export interface PacificaRequestEnvelope {
   account: string;
   signature: string;
   timestamp: number;
@@ -37,8 +37,8 @@ function sortJsonKeys(value: unknown): unknown {
   return value;
 }
 
-export function preparepacificMessage(
-  header: pacificSignatureHeader,
+export function preparePacificaMessage(
+  header: PacificaSignatureHeader,
   payload: Record<string, unknown>,
 ): string {
   if (!header.type) throw new Error('Header missing required field: type');
@@ -54,12 +54,12 @@ export function preparepacificMessage(
 // Signing
 // ============================================================================
 
-export async function signpacificRequest(
+export async function signPacificaRequest(
   wallet: WalletService,
-  header: pacificSignatureHeader,
+  header: PacificaSignatureHeader,
   payload: Record<string, unknown>,
-): Promise<pacificRequestEnvelope> {
-  const message = preparepacificMessage(header, payload);
+): Promise<PacificaRequestEnvelope> {
+  const message = preparePacificaMessage(header, payload);
   const messageBytes = new TextEncoder().encode(message);
   const signatureBytes = await wallet.signMessage(messageBytes);
   const signature = bs58.encode(signatureBytes);

@@ -17,7 +17,7 @@
 import { runInit } from './commands/init.js';
 import { runMeteora } from './commands/meteora.js';
 import { runWallet } from './commands/wallet.js';
-import { runPerps } from './commands/perps.js';
+import { runPacific } from './commands/pacific.js';
 import { runPredict } from './commands/predict.js';
 import { runEliza } from './commands/eliza.js';
 
@@ -46,8 +46,9 @@ async function main(): Promise<void> {
       await runWallet(args);
       break;
 
-    case 'perps':
-      await runPerps(args);
+    case 'pacific':
+    case 'perps': // legacy alias
+      await runPacific(args);
       break;
 
     case 'predict':
@@ -96,13 +97,13 @@ async function main(): Promise<void> {
 
 function printHelp(): void {
   console.log(`
-lpcli — DeFi terminal for Meteora, pacific, and Polymarket
+lpcli — DeFi terminal for Meteora, Pacifica, and Polymarket
 
 Usage:
   lpcli init                   Interactive wallet and config setup
   lpcli meteora                Meteora DLMM (discover, open, close, swap, ...)
+  lpcli pacific                Pacifica perpetuals
   lpcli wallet                 Wallet operations (balance, transfer)
-  lpcli perps                  pacific perpetuals
   lpcli predict                Polymarket prediction markets
   lpcli eliza                  Conversational DeFi agent
 

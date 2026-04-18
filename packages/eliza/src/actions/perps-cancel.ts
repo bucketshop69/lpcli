@@ -1,6 +1,6 @@
 import type { Action, ActionResult, HandlerCallback } from '@elizaos/core';
 import { cancelOrder, cancelStopOrder, cancelAllOrders } from '@lpcli/core';
-import { requireWallet, getpacific } from '../services/lpcli.service.js';
+import { requireWallet, getPacifica } from '../services/lpcli.service.js';
 
 export const perpsCancelAction: Action = {
   name: 'PERPS_CANCEL_ORDERS',
@@ -19,7 +19,7 @@ export const perpsCancelAction: Action = {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
     const address = wallet.getPublicKey().toBase58();
-    const client = getpacific();
+    const client = getPacifica();
 
     const allOrders = await client.getOpenOrders(address);
     const orders = symbol

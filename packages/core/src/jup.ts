@@ -26,6 +26,8 @@ export interface JupiterSwapResult {
   swapType: 'ultra-aggregator' | 'ultra-rfq';
   inputAmountResult?: string;
   outputAmountResult?: string;
+  inputMint: string;
+  outputMint: string;
   inAmount: string;
   outAmount: string;
   priceImpactPct: string;
@@ -224,6 +226,8 @@ export async function jupiterSwap(
     swapType: order.swapType === 'aggregator' ? 'ultra-aggregator' : 'ultra-rfq',
     inputAmountResult: result.inputAmountResult,
     outputAmountResult: result.outputAmountResult,
+    inputMint: params.inputMint,
+    outputMint: params.outputMint,
     inAmount: order.inAmount,
     outAmount: order.outAmount,
     priceImpactPct: order.priceImpactPct,

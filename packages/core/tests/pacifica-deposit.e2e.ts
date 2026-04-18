@@ -1,9 +1,9 @@
 /**
- * pacific Deposit/Withdraw/Balance E2E Tests
+ * Pacifica Deposit/Withdraw/Balance E2E Tests
  *
  * Tests 1-3: Pure logic — no OWS/RPC needed.
  * Tests 4-6: Require OWS wallet + RPC.
- * Test 7: Live pacific API.
+ * Test 7: Live Pacifica API.
  *
  * Run with: pnpm --filter @lpcli/core test:e2e:deposit
  */
@@ -15,13 +15,13 @@ import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import {
   createDepositInstruction,
   buildDepositTransaction,
-  pacific_PROGRAM_ID,
-  pacific_VAULT_PDA,
-  pacific_VAULT_USDC_ATA,
-  pacific_EVENT_AUTHORITY,
-  pacific_USDC_MINT,
-  pacificClient,
-  pacificApiError,
+  PACIFICA_PROGRAM_ID,
+  PACIFICA_VAULT_PDA,
+  PACIFICA_VAULT_USDC_ATA,
+  PACIFICA_EVENT_AUTHORITY,
+  PACIFICA_USDC_MINT,
+  PacificaClient,
+  PacificaApiError,
   WalletService,
 } from '../src/index.js';
 import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
@@ -66,12 +66,12 @@ describe('createDepositInstruction', { concurrency: false }, () => {
     assert.strictEqual(ix.keys.length, 10, 'should have 10 account keys');
 
     // Program ID
-    assert.ok(ix.programId.equals(pacific_PROGRAM_ID), 'programId should be pacific');
+    assert.ok(ix.programId.equals(PACIFICA_PROGRAM_ID), 'programId should be Pacifica');
   });
 
   test('2: account ordering matches on-chain format', () => {
     const ix = createDepositInstruction(TEST_WALLET, 1);
-    const expectedUserAta = getAssociatedTokenAddressSync(pacific_USDC_MINT, TEST_WALLET);
+    const expectedUserAta = getAssociatedTokenAddressSync(PACIFICA_USDC_MINT, TEST_WALLET);
 
     // accounts[0] = user wallet (signer, writable)
     assert.ok(ix.keys[0].pubkey.equals(TEST_WALLET), 'accounts[0] should be user wallet');
@@ -83,11 +83,11 @@ describe('createDepositInstruction', { concurrency: false }, () => {
     assert.strictEqual(ix.keys[1].isWritable, true, 'accounts[1] should be writable');
 
     // accounts[2] = vault PDA (writable)
-    assert.ok(ix.keys[2].pubkey.equals(pacific_VAULT_PDA), 'accounts[2] should be vault PDA');
+    assert.ok(ix.keys[2].pubkey.equals(PACIFICA_VAULT_PDA), 'accounts[2] should be vault PDA');
     assert.strictEqual(ix.keys[2].isWritable, true, 'accounts[2] should be writable');
 
     // accounts[3] = vault USDC ATA (writable)
-    assert.ok(ix.keys[3].pubkey.equals(pacific_VAULT_USDC_ATA), 'accounts[3] should be vault USDC ATA');
+    assert.ok(ix.keys[3].pubkey.equals(PACIFICA_VAULT_USDC_ATA), 'accounts[3] should be vault USDC ATA');
     assert.strictEqual(ix.keys[3].isWritable, true, 'accounts[3] should be writable');
 
     // accounts[4] = Token Program
@@ -99,19 +99,19 @@ describe('createDepositInstruction', { concurrency: false }, () => {
     assert.strictEqual(ix.keys[5].isWritable, false);
 
     // accounts[6] = USDC Mint
-    assert.ok(ix.keys[6].pubkey.equals(pacific_USDC_MINT), 'accounts[6] should be USDC Mint');
+    assert.ok(ix.keys[6].pubkey.equals(PACIFICA_USDC_MINT), 'accounts[6] should be USDC Mint');
     assert.strictEqual(ix.keys[6].isWritable, false);
 
     // accounts[7] = System Program
     assert.ok(ix.keys[7].pubkey.equals(SystemProgram.programId), 'accounts[7] should be System Program');
     assert.strictEqual(ix.keys[7].isWritable, false);
 
-    // accounts[8] = Config
-    assert.ok(ix.keys[8].pubkey.equals(pacific_EVENT_AUTHORITY), 'accounts[8] should be Event Authority');
+    // accounts[8] = Event Authority
+    assert.ok(ix.keys[8].pubkey.equals(PACIFICA_EVENT_AUTHORITY), 'accounts[8] should be Event Authority');
     assert.strictEqual(ix.keys[8].isWritable, false);
 
-    // accounts[9] = pacific Program (self-ref)
-    assert.ok(ix.keys[9].pubkey.equals(pacific_PROGRAM_ID), 'accounts[9] should be pacific Program');
+    // accounts[9] = Pacifica Program (self-ref)
+    assert.ok(ix.keys[9].pubkey.equals(PACIFICA_PROGRAM_ID), 'accounts[9] should be Pacifica Program');
     assert.strictEqual(ix.keys[9].isWritable, false);
   });
 
@@ -159,16 +159,16 @@ describe('buildDepositTransaction', { concurrency: false }, () => {
 });
 
 // ---------------------------------------------------------------------------
-// Live pacific API tests (no auth required)
+// Live Pacifica API tests (no auth required)
 // ---------------------------------------------------------------------------
 
-describe('pacificClient', { concurrency: false }, () => {
+describe('PacificaClient', { concurrency: false }, () => {
 
   test('5: getAccountInfo returns balance data or 404', async () => {
     const wallet = await tryInitWallet();
     if (!wallet) return;
 
-    const client = new pacificClient();
+    const client = new PacificaClient();
     const address = wallet.getPublicKey().toBase58();
 
     try {
@@ -178,14 +178,14 @@ describe('pacificClient', { concurrency: false }, () => {
       assert.ok('account_equity' in info, 'should have account_equity');
       assert.ok('available_to_spend' in info, 'should have available_to_spend');
     } catch (err) {
-      // 404 is fine — account not registered on pacific
-      assert.ok(err instanceof pacificApiError, 'should throw pacificApiError');
-      assert.strictEqual((err as pacificApiError).status, 404, 'should be 404');
+      // 404 is fine — account not registered on Pacifica
+      assert.ok(err instanceof PacificaApiError, 'should throw PacificaApiError');
+      assert.strictEqual((err as PacificaApiError).status, 404, 'should be 404');
     }
   });
 
   test('6: getMarkets returns market list', async () => {
-    const client = new pacificClient();
+    const client = new PacificaClient();
     const markets = await client.getMarkets();
 
     assert.ok(Array.isArray(markets), 'should return an array');
@@ -198,7 +198,7 @@ describe('pacificClient', { concurrency: false }, () => {
   });
 
   test('7: getPrices returns price data', async () => {
-    const client = new pacificClient();
+    const client = new PacificaClient();
     const prices = await client.getPrices();
 
     assert.ok(Array.isArray(prices), 'should return an array');
@@ -213,5 +213,5 @@ describe('pacificClient', { concurrency: false }, () => {
 });
 
 console.log(`
-pacific Deposit/Withdraw/Balance E2E Tests
+Pacifica Deposit/Withdraw/Balance E2E Tests
 `);

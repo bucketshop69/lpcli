@@ -1,11 +1,11 @@
 import type { Action, ActionResult, HandlerCallback } from '@elizaos/core';
-import { buildDepositTransaction, pacific_MIN_DEPOSIT_USDC } from '@lpcli/core';
+import { buildDepositTransaction, PACIFICA_MIN_DEPOSIT_USDC } from '@lpcli/core';
 import { requireWallet } from '../services/lpcli.service.js';
 
 export const perpsDepositAction: Action = {
   name: 'PERPS_DEPOSIT',
   similes: ['DEPOSIT', 'FUND_ACCOUNT', 'ADD_COLLATERAL', 'DEPOSIT_USDC', 'ADD_FUNDS'],
-  description: `Deposit USDC to pacific perpetuals account. Minimum $${pacific_MIN_DEPOSIT_USDC}.`,
+  description: `Deposit USDC to pacific perpetuals account. Minimum $${PACIFICA_MIN_DEPOSIT_USDC}.`,
   validate: async (_runtime, message) => {
     const text = message.content.text?.toUpperCase() || '';
     return text.includes('DEPOSIT') || text.includes('FUND') || text.includes('COLLATERAL');
@@ -15,8 +15,8 @@ export const perpsDepositAction: Action = {
 
     const amountMatch = text.match(/(\d+\.?\d*)/);
     const amount = amountMatch ? parseFloat(amountMatch[1]) : 0;
-    if (amount < pacific_MIN_DEPOSIT_USDC) {
-      return { success: false, error: `Minimum deposit is $${pacific_MIN_DEPOSIT_USDC} USDC.` };
+    if (amount < PACIFICA_MIN_DEPOSIT_USDC) {
+      return { success: false, error: `Minimum deposit is $${PACIFICA_MIN_DEPOSIT_USDC} USDC.` };
     }
 
     const lpcli = await requireWallet();

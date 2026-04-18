@@ -3,7 +3,7 @@
  */
 
 import type { Provider, ProviderResult } from '@elizaos/core';
-import { getpacific } from '../services/lpcli.service.js';
+import { getPacifica } from '../services/lpcli.service.js';
 
 export const marketProvider: Provider = {
   name: 'MARKET_DATA',
@@ -13,7 +13,7 @@ export const marketProvider: Provider = {
 
   get: async (): Promise<ProviderResult> => {
     try {
-      const client = getpacific();
+      const client = getPacifica();
       const prices = await client.getPrices();
 
       // Top markets by volume

@@ -1,6 +1,6 @@
 import type { Action, ActionResult, HandlerCallback } from '@elizaos/core';
 import { setPositionTPSL } from '@lpcli/core';
-import { requireWallet, getpacific } from '../services/lpcli.service.js';
+import { requireWallet, getPacifica } from '../services/lpcli.service.js';
 
 export const perpsStopLossAction: Action = {
   name: 'PERPS_SET_SL',

@@ -645,13 +645,13 @@ export class DLMMService {
       },
     );
 
-    const tokenXDecimals = positionInfo.tokenX?.mint?.decimals ?? 6;
-    const tokenYDecimals = positionInfo.tokenY?.mint?.decimals ?? 6;
-    const tokenXMint = positionInfo.tokenX?.mint?.address?.toBase58() ?? '';
-    const tokenYMint = positionInfo.tokenY?.mint?.address?.toBase58() ?? '';
+    // Use getPoolMeta() for reliable decimals and mints — _findPosition()
+    // may return minimal positionInfo from cache without tokenX/tokenY data.
+    const meta = await this.getPoolMeta(poolAddress);
     const registry = this._options.tokenRegistry;
-    const tokenXSymbol = (registry?.getCached(tokenXMint)?.symbol ?? tokenXMint.slice(0, 6)).toUpperCase();
-    const tokenYSymbol = (registry?.getCached(tokenYMint)?.symbol ?? tokenYMint.slice(0, 6)).toUpperCase();
+    if (registry) await registry.resolve([meta.tokenXMint, meta.tokenYMint]);
+    const tokenXSymbol = (registry?.getCached(meta.tokenXMint)?.symbol ?? meta.tokenXMint.slice(0, 6)).toUpperCase();
+    const tokenYSymbol = (registry?.getCached(meta.tokenYMint)?.symbol ?? meta.tokenYMint.slice(0, 6)).toUpperCase();
 
     const rawX = parseFloat(posData.totalXAmount);
     const rawY = parseFloat(posData.totalYAmount);
@@ -661,12 +661,12 @@ export class DLMMService {
     return {
       withdrawn_x: rawX,
       withdrawn_y: rawY,
-      withdrawn_x_ui: rawX / 10 ** tokenXDecimals,
-      withdrawn_y_ui: rawY / 10 ** tokenYDecimals,
+      withdrawn_x_ui: rawX / 10 ** meta.tokenXDecimals,
+      withdrawn_y_ui: rawY / 10 ** meta.tokenYDecimals,
       claimed_fees_x: feesX,
       claimed_fees_y: feesY,
-      claimed_fees_x_ui: feesX / 10 ** tokenXDecimals,
-      claimed_fees_y_ui: feesY / 10 ** tokenYDecimals,
+      claimed_fees_x_ui: feesX / 10 ** meta.tokenXDecimals,
+      claimed_fees_y_ui: feesY / 10 ** meta.tokenYDecimals,
       token_x_symbol: tokenXSymbol,
       token_y_symbol: tokenYSymbol,
       tx: signatures[signatures.length - 1],

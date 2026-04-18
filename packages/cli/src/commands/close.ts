@@ -56,7 +56,14 @@ Position closed!
 `);
 }
 
-function printFundedCloseResult(result: FundedCloseResult): void {
+function formatSwapAmount(raw: string, mint: string, meta: Record<string, { symbol: string; decimals: number }>): string {
+  const info = meta[mint];
+  if (!info) return raw;
+  const ui = parseFloat(raw) / 10 ** info.decimals;
+  return `${ui.toFixed(info.decimals <= 6 ? 4 : 6)} ${info.symbol}`;
+}
+
+function printFundedCloseResult(result: FundedCloseResult, fundingBalance?: string): void {
   const { token_x_symbol: sX, token_y_symbol: sY } = result.close;
   console.log(`
 Position closed!
@@ -68,10 +75,15 @@ Position closed!
 `);
 
   for (const swap of result.swaps) {
-    console.log(`    ${swap.inAmount} → ${swap.outAmount}`);
+    const inStr = formatSwapAmount(swap.inAmount, swap.inputMint, result.tokenMeta);
+    const outStr = formatSwapAmount(swap.outAmount, swap.outputMint, result.tokenMeta);
+    console.log(`    ${inStr} → ${outStr}`);
     console.log(`    ${solscanTxUrl(swap.signature)}`);
   }
 
+  if (fundingBalance) {
+    console.log(`  Funding balance: ${fundingBalance}`);
+  }
   console.log();
 }
 
@@ -188,6 +200,16 @@ async function executeClose(
       console.error('Failed:', err instanceof Error ? err.message : String(err));
       process.exit(1);
     }
-    printFundedCloseResult(result);
+
+    // Fetch funding token balance after swap-back
+    const funding = lpcli.getFundingToken();
+    const wallet = await lpcli.getWallet();
+    let fundingBalance: string | undefined;
+    try {
+      const bal = await wallet.getTokenBalance(funding.mint);
+      if (bal) fundingBalance = `${bal.uiAmount?.toFixed(4)} ${funding.symbol}`;
+    } catch { /* non-critical */ }
+
+    printFundedCloseResult(result, fundingBalance);
   }
 }

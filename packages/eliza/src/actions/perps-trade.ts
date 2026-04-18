@@ -1,6 +1,6 @@
 import type { Action, ActionResult, HandlerCallback } from '@elizaos/core';
 import { createMarketOrder, roundToLotSize } from '@lpcli/core';
-import { requireWallet, getpacific } from '../services/lpcli.service.js';
+import { requireWallet, getPacifica } from '../services/lpcli.service.js';
 
 export const perpsTradeAction: Action = {
   name: 'PERPS_TRADE',
@@ -34,7 +34,7 @@ export const perpsTradeAction: Action = {
 
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = getpacific();
+    const client = getPacifica();
 
     // Validate and round to lot size
     const market = await client.getMarkets().then(ms => ms.find(m => m.symbol === symbol));

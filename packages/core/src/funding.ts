@@ -378,7 +378,14 @@ export async function fundedClose(params: {
   // 5. Execute swap-back
   const swapResults = await executeSwaps(steps, wallet);
 
-  return { close, swaps: swapResults };
+  // 6. Build token metadata for CLI display (mint → symbol + decimals)
+  const tokenMeta: Record<string, { symbol: string; decimals: number }> = {
+    [poolMeta.tokenXMint]: { symbol: close.token_x_symbol, decimals: poolMeta.tokenXDecimals },
+    [poolMeta.tokenYMint]: { symbol: close.token_y_symbol, decimals: poolMeta.tokenYDecimals },
+    [config.fundingToken.mint]: { symbol: config.fundingToken.symbol, decimals: config.fundingToken.decimals },
+  };
+
+  return { close, swaps: swapResults, tokenMeta };
 }
 
 /**

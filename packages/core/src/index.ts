@@ -62,39 +62,39 @@ export type { LiquiditySplit } from './funding.js';
 export type { TokenInfo } from './tokens.js';
 export { TokenRegistry } from './tokens.js';
 
-// pacific — signing
-export type { pacificSignatureHeader, pacificRequestEnvelope } from './pacific.js';
-export { preparepacificMessage, signpacificRequest } from './pacific.js';
+// Pacifica — signing
+export type { PacificaSignatureHeader, PacificaRequestEnvelope } from './pacifica.js';
+export { preparePacificaMessage, signPacificaRequest } from './pacifica.js';
 
-// pacific — REST client
+// Pacifica — REST client
 export type {
-  pacificMarketInfo,
-  pacificPriceInfo,
-  pacificAccountInfo,
-  pacificPosition,
-  pacificOrder,
-  pacificKline,
-  pacificKlineInterval,
-} from './pacific-client.js';
-export { pacificClient, pacificApiError, pacific_REST_URL, pacific_KLINE_INTERVALS } from './pacific-client.js';
+  PacificaMarketInfo,
+  PacificaPriceInfo,
+  PacificaAccountInfo,
+  PacificaPosition,
+  PacificaOrder,
+  PacificaKline,
+  PacificaKlineInterval,
+} from './pacifica-client.js';
+export { PacificaClient, PacificaApiError, PACIFICA_REST_URL, PACIFICA_KLINE_INTERVALS } from './pacifica-client.js';
 
-// pacific — deposit (on-chain instruction, unsigned)
+// Pacifica — deposit (on-chain instruction, unsigned)
 export {
   createDepositInstruction,
   buildDepositTransaction,
-  pacific_PROGRAM_ID,
-  pacific_VAULT_PDA,
-  pacific_VAULT_USDC_ATA,
-  pacific_EVENT_AUTHORITY,
-  pacific_USDC_MINT,
-  pacific_MIN_DEPOSIT_USDC,
-} from './pacific-deposit.js';
+  PACIFICA_PROGRAM_ID,
+  PACIFICA_VAULT_PDA,
+  PACIFICA_VAULT_USDC_ATA,
+  PACIFICA_EVENT_AUTHORITY,
+  PACIFICA_USDC_MINT,
+  PACIFICA_MIN_DEPOSIT_USDC,
+} from './pacifica-deposit.js';
 
-// pacific — withdraw (signed REST request)
-export { requestWithdrawal } from './pacific-withdraw.js';
+// Pacifica — withdraw (signed REST request)
+export { requestWithdrawal } from './pacifica-withdraw.js';
 
-// pacific — trade execution (signed REST requests)
-export type { MarketOrderParams, LimitOrderParams, MarketOrderResult } from './pacific-trade.js';
+// Pacifica — trade execution (signed REST requests)
+export type { MarketOrderParams, LimitOrderParams, MarketOrderResult } from './pacifica-trade.js';
 export {
   createMarketOrder,
   createLimitOrder,
@@ -104,15 +104,15 @@ export {
   closePosition,
   roundToLotSize,
   validateOrder,
-} from './pacific-trade.js';
+} from './pacifica-trade.js';
 
-// pacific — indicators (read-only)
-export type { RSIResult } from './pacific-indicators.js';
-export { calculateRSI, fetchRSI } from './pacific-indicators.js';
+// Pacifica — indicators (read-only)
+export type { RSIResult } from './pacifica-indicators.js';
+export { calculateRSI, fetchRSI } from './pacifica-indicators.js';
 
-// pacific — TP/SL (signed REST requests)
-export type { TPSLParams } from './pacific-tpsl.js';
-export { setPositionTPSL } from './pacific-tpsl.js';
+// Pacifica — TP/SL (signed REST requests)
+export type { TPSLParams } from './pacifica-tpsl.js';
+export { setPositionTPSL } from './pacifica-tpsl.js';
 
 // Polymarket — auth (VPS relay)
 export type { PolymarketAuthResult, PolymarketRelayConfig } from './polymarket-auth.js';

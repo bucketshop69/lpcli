@@ -311,6 +311,8 @@ export interface FundedOpenResult {
 export interface FundedCloseResult {
   close: ClosePositionResult;
   swaps: import('./jup.js').JupiterSwapResult[];
+  /** Token metadata for formatting swap amounts (mint → { symbol, decimals }). */
+  tokenMeta: Record<string, { symbol: string; decimals: number }>;
 }
 
 /**

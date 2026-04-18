@@ -28,7 +28,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import {
   LPCLI,
-  pacificClient,
+  PacificaClient,
   createMarketOrder,
   closePosition as closePerpsPosition,
   cancelAllOrders,
@@ -36,7 +36,7 @@ import {
   buildDepositTransaction,
   requestWithdrawal,
   roundToLotSize,
-  pacific_MIN_DEPOSIT_USDC,
+  PACIFICA_MIN_DEPOSIT_USDC,
 } from '@lpcli/core';
 import type { ReadinessStatus } from '@lpcli/core';
 
@@ -279,7 +279,7 @@ server.tool(
     limit: z.number().int().min(1).max(100).default(20).describe('Max results'),
   },
   async ({ sort_by, limit }) => {
-    const client = new pacificClient();
+    const client = new PacificaClient();
     const [markets, prices] = await Promise.all([
       client.getMarkets(),
       client.getPrices(),
@@ -322,7 +322,7 @@ server.tool(
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
     const address = wallet.getPublicKey().toBase58();
-    const client = new pacificClient();
+    const client = new PacificaClient();
 
     try {
       const info = await client.getAccountInfo(address);
@@ -338,7 +338,7 @@ server.tool(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('404') || msg.toLowerCase().includes('not found')) {
-        return { content: [{ type: 'text', text: `No pacific account found for ${address}. Deposit at least $${pacific_MIN_DEPOSIT_USDC} USDC to create one.` }] };
+        return { content: [{ type: 'text', text: `No pacific account found for ${address}. Deposit at least $${PACIFICA_MIN_DEPOSIT_USDC} USDC to create one.` }] };
       }
       throw err;
     }
@@ -355,7 +355,7 @@ server.tool(
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
     const address = wallet.getPublicKey().toBase58();
-    const client = new pacificClient();
+    const client = new PacificaClient();
 
     const [positions, prices] = await Promise.all([
       client.getPositions(address),
@@ -397,7 +397,7 @@ server.tool(
   async ({ symbol, direction, size, slippage_percent }) => {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = new pacificClient();
+    const client = new PacificaClient();
 
     const result = await createMarketOrder(wallet, {
       symbol: symbol.toUpperCase(),
@@ -421,7 +421,7 @@ server.tool(
   async ({ symbol }) => {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = new pacificClient();
+    const client = new PacificaClient();
 
     const result = await closePerpsPosition(wallet, symbol.toUpperCase(), client);
 
@@ -445,7 +445,7 @@ server.tool(
   async ({ symbol, price }) => {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = new pacificClient();
+    const client = new PacificaClient();
 
     await setPositionTPSL(wallet, {
       symbol: symbol.toUpperCase(),
@@ -468,7 +468,7 @@ server.tool(
   async ({ symbol, price }) => {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = new pacificClient();
+    const client = new PacificaClient();
 
     await setPositionTPSL(wallet, {
       symbol: symbol.toUpperCase(),
@@ -483,9 +483,9 @@ server.tool(
 
 server.tool(
   'perps_deposit',
-  `Deposit USDC collateral to pacific. Minimum $${pacific_MIN_DEPOSIT_USDC}. Requires wallet.`,
+  `Deposit USDC collateral to pacific. Minimum $${PACIFICA_MIN_DEPOSIT_USDC}. Requires wallet.`,
   {
-    amount: z.number().min(pacific_MIN_DEPOSIT_USDC).describe(`USDC amount to deposit (min $${pacific_MIN_DEPOSIT_USDC})`),
+    amount: z.number().min(PACIFICA_MIN_DEPOSIT_USDC).describe(`USDC amount to deposit (min $${PACIFICA_MIN_DEPOSIT_USDC})`),
   },
   async ({ amount }) => {
     const lpcli = await requireWallet();
@@ -513,7 +513,7 @@ server.tool(
   async ({ amount }) => {
     const lpcli = await requireWallet();
     const wallet = await lpcli.getWallet();
-    const client = new pacificClient();
+    const client = new PacificaClient();
 
     await requestWithdrawal(wallet, amount, client);
 

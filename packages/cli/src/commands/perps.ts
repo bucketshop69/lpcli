@@ -1,21 +1,20 @@
 /**
- * `lpcli perps` — pacific perpetuals operations.
+ * `lpcli pacific` — pacific perpetuals operations.
  *
  * Usage:
- *   lpcli perps balance                                    Show pacific account balance
- *   lpcli perps positions                                  List open positions with PnL
- *   lpcli perps position <symbol>                          Detailed view of a position
- *   lpcli perps deposit <amount>  [--yes]                  Deposit USDC to pacific
- *   lpcli perps withdraw <amount> [--yes]                  Withdraw USDC from pacific
- *   lpcli perps trade <symbol> <long|short> <size> [--yes] Place a market order
- *   lpcli perps close <symbol> [--yes]                     Close an open position
- *   lpcli perps cancel [symbol] [--yes]                     Cancel open orders (filter by symbol)
+ *   lpcli pacific balance                                    Show pacific account balance
+ *   lpcli pacific positions                                  List open positions with PnL
+ *   lpcli pacific position <symbol>                          Detailed view of a position
+ *   lpcli pacific deposit <amount>  [--yes]                  Deposit USDC to pacific
+ *   lpcli pacific withdraw <amount> [--yes]                  Withdraw USDC from pacific
+ *   lpcli pacific trade <symbol> <long|short> <size> [--yes] Place a market order
+ *   lpcli pacific close <symbol> [--yes]                     Close an open position
+ *   lpcli pacific cancel [symbol] [--yes]                     Cancel open orders (filter by symbol)
  */
 
-import { createInterface } from 'node:readline';
 import {
   LPCLI,
-  pacificClient,
+  PacificaClient,
   buildDepositTransaction,
   requestWithdrawal,
   createMarketOrder,
@@ -27,18 +26,15 @@ import {
   roundToLotSize,
   setPositionTPSL,
   fetchRSI,
-  pacific_MIN_DEPOSIT_USDC,
-  pacific_KLINE_INTERVALS,
+  PACIFICA_MIN_DEPOSIT_USDC,
+  PACIFICA_KLINE_INTERVALS,
 } from '@lpcli/core';
-import type { pacificKlineInterval } from '@lpcli/core';
+import type { PacificaKlineInterval } from '@lpcli/core';
+import { hasFlag, askOnce as ask } from '../helpers.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function hasFlag(args: string[], flag: string): boolean {
-  return args.includes(flag);
-}
 
 function isStopOrder(o: { order_type: string }): boolean {
   const t = o.order_type.toLowerCase();
@@ -57,16 +53,6 @@ function formatOrder(o: { symbol: string; side: string; order_type: string; init
   return `${o.symbol} ${side} ${type} ${qty} ${priceStr}${reduceOnly}`.trim();
 }
 
-function ask(question: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Subcommands
 // ---------------------------------------------------------------------------
@@ -75,7 +61,7 @@ async function showBalance(): Promise<void> {
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
   const address = wallet.getPublicKey().toBase58();
-  const client = new pacificClient();
+  const client = new PacificaClient();
 
   try {
     const info = await client.getAccountInfo(address);
@@ -99,7 +85,7 @@ async function showBalance(): Promise<void> {
     if (msg.includes('404') || msg.toLowerCase().includes('not found')) {
       console.log(`\npacific Account: ${address}`);
       console.log('  No account found. Deposit USDC to create your account.');
-      console.log('  Usage: lpcli perps deposit <amount>\n');
+      console.log('  Usage: lpcli pacific deposit <amount>\n');
     } else {
       throw err;
     }
@@ -111,14 +97,14 @@ async function runDeposit(args: string[]): Promise<void> {
   const autoConfirm = hasFlag(args, '--yes');
 
   if (!amountRaw) {
-    console.error('Usage: lpcli perps deposit <amount> [--yes]');
+    console.error('Usage: lpcli pacific deposit <amount> [--yes]');
     console.error('  amount: USDC amount to deposit (e.g. 10, 50.5)');
     process.exit(1);
   }
 
   const amount = parseFloat(amountRaw);
-  if (isNaN(amount) || amount < pacific_MIN_DEPOSIT_USDC) {
-    console.error(`Minimum deposit is $${pacific_MIN_DEPOSIT_USDC} USDC (pacific requirement).`);
+  if (isNaN(amount) || amount < PACIFICA_MIN_DEPOSIT_USDC) {
+    console.error(`Minimum deposit is $${PACIFICA_MIN_DEPOSIT_USDC} USDC (pacific requirement).`);
     process.exit(1);
   }
 
@@ -164,7 +150,7 @@ async function runWithdraw(args: string[]): Promise<void> {
   const autoConfirm = hasFlag(args, '--yes');
 
   if (!amountRaw) {
-    console.error('Usage: lpcli perps withdraw <amount> [--yes]');
+    console.error('Usage: lpcli pacific withdraw <amount> [--yes]');
     console.error('  amount: USDC amount to withdraw (e.g. 10, 50.5)');
     process.exit(1);
   }
@@ -178,7 +164,7 @@ async function runWithdraw(args: string[]): Promise<void> {
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
   const address = wallet.getPublicKey().toBase58();
-  const client = new pacificClient();
+  const client = new PacificaClient();
 
   // Check available to withdraw
   let availableToWithdraw = 0;
@@ -216,7 +202,7 @@ async function runWithdraw(args: string[]): Promise<void> {
 }
 
 async function showMarkets(): Promise<void> {
-  const client = new pacificClient();
+  const client = new PacificaClient();
   const [markets, prices] = await Promise.all([
     client.getMarkets(),
     client.getPrices(),
@@ -275,11 +261,11 @@ async function showMarket(args: string[]): Promise<void> {
   const symbol = args[0]?.toUpperCase();
 
   if (!symbol) {
-    console.error('Usage: lpcli perps market <symbol>');
+    console.error('Usage: lpcli pacific market <symbol>');
     process.exit(1);
   }
 
-  const client = new pacificClient();
+  const client = new PacificaClient();
   const [markets, prices] = await Promise.all([
     client.getMarkets(),
     client.getPrices(),
@@ -322,7 +308,7 @@ async function showPositions(): Promise<void> {
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
   const address = wallet.getPublicKey().toBase58();
-  const client = new pacificClient();
+  const client = new PacificaClient();
 
   const [positions, prices, orders] = await Promise.all([
     client.getPositions(address),
@@ -351,9 +337,11 @@ async function showPositions(): Promise<void> {
       totalPnl += pnl;
 
       const pnlSign = pnl >= 0 ? '+' : '';
+      const funding = parseFloat(pos.funding);
+      const fundingStr = funding !== 0 ? `  Funding: ${funding >= 0 ? '+' : ''}$${funding.toFixed(4)}` : '';
       console.log(`  ${pos.symbol} ${side} ${size}`);
       console.log(`    Entry: $${entry.toLocaleString()}  Mark: $${mark.toLocaleString()}`);
-      console.log(`    PnL: ${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`);
+      console.log(`    PnL: ${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)${fundingStr}`);
     }
 
     console.log('─'.repeat(70));
@@ -378,14 +366,14 @@ async function showPosition(args: string[]): Promise<void> {
   const symbol = args[0]?.toUpperCase();
 
   if (!symbol) {
-    console.error('Usage: lpcli perps position <symbol>');
+    console.error('Usage: lpcli pacific position <symbol>');
     process.exit(1);
   }
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
   const address = wallet.getPublicKey().toBase58();
-  const client = new pacificClient();
+  const client = new PacificaClient();
 
   const [positions, prices] = await Promise.all([
     client.getPositions(address),
@@ -433,7 +421,7 @@ async function runTrade(args: string[]): Promise<void> {
   const autoConfirm = hasFlag(args, '--yes');
 
   if (!symbol || !direction || !sizeRaw) {
-    console.error('Usage: lpcli perps trade <symbol> <long|short> <size> [--yes]');
+    console.error('Usage: lpcli pacific trade <symbol> <long|short> <size> [--yes]');
     console.error('  symbol: Market symbol (e.g. BTC, ETH, SOL)');
     console.error('  long/short: Trade direction');
     console.error('  size: Position size in asset units (e.g. 0.01 BTC)');
@@ -455,7 +443,7 @@ async function runTrade(args: string[]): Promise<void> {
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
-  const client = new pacificClient();
+  const client = new PacificaClient();
 
   // Validate symbol and get lot size
   const markets = await client.getMarkets();
@@ -513,14 +501,14 @@ async function runClosePosition(args: string[]): Promise<void> {
   const autoConfirm = hasFlag(args, '--yes');
 
   if (!symbol) {
-    console.error('Usage: lpcli perps close <symbol> [--yes]');
+    console.error('Usage: lpcli pacific close <symbol> [--yes]');
     console.error('  symbol: Market symbol of position to close (e.g. BTC, ETH, SOL)');
     process.exit(1);
   }
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
-  const client = new pacificClient();
+  const client = new PacificaClient();
   const address = wallet.getPublicKey().toBase58();
 
   // Find the position
@@ -571,7 +559,7 @@ async function runCancel(args: string[]): Promise<void> {
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
-  const client = new pacificClient();
+  const client = new PacificaClient();
   const address = wallet.getPublicKey().toBase58();
 
   // Show current open orders
@@ -651,7 +639,7 @@ async function runStopLoss(args: string[]): Promise<void> {
   const autoConfirm = hasFlag(args, '--yes');
 
   if (!symbol || !priceRaw) {
-    console.error('Usage: lpcli perps sl <symbol> <price> [--yes]');
+    console.error('Usage: lpcli pacific sl <symbol> <price> [--yes]');
     console.error('  Sets a stop-loss at the given price for your position.');
     process.exit(1);
   }
@@ -664,7 +652,7 @@ async function runStopLoss(args: string[]): Promise<void> {
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
-  const client = new pacificClient();
+  const client = new PacificaClient();
   const address = wallet.getPublicKey().toBase58();
 
   const positions = await client.getPositions(address);
@@ -706,7 +694,7 @@ async function runTakeProfit(args: string[]): Promise<void> {
   const autoConfirm = hasFlag(args, '--yes');
 
   if (!symbol || !priceRaw) {
-    console.error('Usage: lpcli perps tp <symbol> <price> [--yes]');
+    console.error('Usage: lpcli pacific tp <symbol> <price> [--yes]');
     console.error('  Sets a take-profit at the given price for your position.');
     process.exit(1);
   }
@@ -719,7 +707,7 @@ async function runTakeProfit(args: string[]): Promise<void> {
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
-  const client = new pacificClient();
+  const client = new PacificaClient();
   const address = wallet.getPublicKey().toBase58();
 
   const positions = await client.getPositions(address);
@@ -778,19 +766,19 @@ async function runLimit(args: string[]): Promise<void> {
 
   const priceVal = priceIdx >= 0 ? args[priceIdx + 1] : undefined;
   const rsiVal = rsiIdx >= 0 ? args[rsiIdx + 1] : undefined;
-  const tfVal = (tfIdx >= 0 ? args[tfIdx + 1] : '15m') as pacificKlineInterval;
+  const tfVal = (tfIdx >= 0 ? args[tfIdx + 1] : '15m') as PacificaKlineInterval;
 
   if (!symbol || !direction) {
     console.error(`Usage:
-  lpcli perps limit <symbol> <long|short> <size> --price <price>
-  lpcli perps limit <symbol> <long|short> <size> --rsi "<op><value>" [--tf <timeframe>]
-  lpcli perps limit <symbol> close --price <price>
-  lpcli perps limit <symbol> close --rsi "<op><value>" [--tf <timeframe>]
+  lpcli pacific limit <symbol> <long|short> <size> --price <price>
+  lpcli pacific limit <symbol> <long|short> <size> --rsi "<op><value>" [--tf <timeframe>]
+  lpcli pacific limit <symbol> close --price <price>
+  lpcli pacific limit <symbol> close --rsi "<op><value>" [--tf <timeframe>]
 
 Examples:
-  lpcli perps limit SOL long 0.1 --price 80        Price-based limit (server-side)
-  lpcli perps limit SOL long 0.1 --rsi ">55" --tf 15m   RSI-triggered (client-side)
-  lpcli perps limit SOL close --rsi "<45" --tf 1h   Close position when RSI drops`);
+  lpcli pacific limit SOL long 0.1 --price 80        Price-based limit (server-side)
+  lpcli pacific limit SOL long 0.1 --rsi ">55" --tf 15m   RSI-triggered (client-side)
+  lpcli pacific limit SOL close --rsi "<45" --tf 1h   Close position when RSI drops`);
     process.exit(1);
   }
 
@@ -811,7 +799,7 @@ Examples:
 
   const lpcli = new LPCLI();
   const wallet = await lpcli.getWallet();
-  const client = new pacificClient();
+  const client = new PacificaClient();
 
   // --- CLOSE mode: determine side and size from position ---
   let side: 'bid' | 'ask';
@@ -887,8 +875,8 @@ Examples:
     process.exit(1);
   }
 
-  if (!pacific_KLINE_INTERVALS.includes(tfVal)) {
-    console.error(`Invalid timeframe. Valid: ${pacific_KLINE_INTERVALS.join(', ')}`);
+  if (!PACIFICA_KLINE_INTERVALS.includes(tfVal)) {
+    console.error(`Invalid timeframe. Valid: ${PACIFICA_KLINE_INTERVALS.join(', ')}`);
     process.exit(1);
   }
 
@@ -963,17 +951,17 @@ Examples:
 
 async function showRSI(args: string[]): Promise<void> {
   const symbol = args[0]?.toUpperCase();
-  const interval = (args[1] ?? '15m') as pacificKlineInterval;
+  const interval = (args[1] ?? '15m') as PacificaKlineInterval;
 
   if (!symbol) {
-    console.error('Usage: lpcli perps rsi <symbol> [timeframe]');
-    console.error(`  timeframes: ${pacific_KLINE_INTERVALS.join(', ')} (default: 15m)`);
+    console.error('Usage: lpcli pacific rsi <symbol> [timeframe]');
+    console.error(`  timeframes: ${PACIFICA_KLINE_INTERVALS.join(', ')} (default: 15m)`);
     process.exit(1);
   }
 
-  if (!pacific_KLINE_INTERVALS.includes(interval)) {
+  if (!PACIFICA_KLINE_INTERVALS.includes(interval)) {
     console.error(`Invalid timeframe: ${interval}`);
-    console.error(`  Valid: ${pacific_KLINE_INTERVALS.join(', ')}`);
+    console.error(`  Valid: ${PACIFICA_KLINE_INTERVALS.join(', ')}`);
     process.exit(1);
   }
 
@@ -1060,24 +1048,24 @@ export async function runPerps(args: string[]): Promise<void> {
       case '--help':
       case '-h':
         console.log(`
-lpcli perps — pacific perpetuals
+lpcli pacific — Pacifica perpetuals
 
 Usage:
-  lpcli perps balance                             Show account balance & margin
-  lpcli perps positions                           List open positions with PnL
-  lpcli perps position <symbol>                   Detailed view of a position
-  lpcli perps markets                             List all available markets
-  lpcli perps market <symbol>                     Detailed view of a market
-  lpcli perps deposit <amount>                    Deposit USDC to pacific
-  lpcli perps withdraw <amount>                   Withdraw USDC from pacific
-  lpcli perps trade <symbol> <long|short> <size>  Place a market order
-  lpcli perps close <symbol>                      Close an open position
-  lpcli perps cancel [symbol]                      Cancel open orders (optional symbol filter)
-  lpcli perps limit <symbol> <long|short|close> [size] --price <p>    Limit order (server-side)
-  lpcli perps limit <symbol> <long|short|close> [size] --rsi "<cond>" [--tf <tf>]  RSI conditional
-  lpcli perps rsi <symbol> [timeframe]             RSI indicator (default 15m)
-  lpcli perps sl <symbol> <price>                 Set stop-loss on a position
-  lpcli perps tp <symbol> <price>                 Set take-profit on a position
+  lpcli pacific balance                             Show account balance & margin
+  lpcli pacific positions                           List open positions with PnL
+  lpcli pacific position <symbol>                   Detailed view of a position
+  lpcli pacific markets                             List all available markets
+  lpcli pacific market <symbol>                     Detailed view of a market
+  lpcli pacific deposit <amount>                    Deposit USDC to Pacifica
+  lpcli pacific withdraw <amount>                   Withdraw USDC from Pacifica
+  lpcli pacific trade <symbol> <long|short> <size>  Place a market order
+  lpcli pacific close <symbol>                      Close an open position
+  lpcli pacific cancel [symbol]                     Cancel open orders (optional symbol filter)
+  lpcli pacific limit <symbol> <long|short|close> [size] --price <p>    Limit order (server-side)
+  lpcli pacific limit <symbol> <long|short|close> [size] --rsi "<cond>" [--tf <tf>]  RSI conditional
+  lpcli pacific rsi <symbol> [timeframe]            RSI indicator (default 15m)
+  lpcli pacific sl <symbol> <price>                 Set stop-loss on a position
+  lpcli pacific tp <symbol> <price>                 Set take-profit on a position
 
 Options:
   --yes                              Skip confirmation prompt
@@ -1085,8 +1073,8 @@ Options:
         break;
 
       default:
-        console.error(`Unknown perps subcommand: ${subcommand}`);
-        console.error('Usage: lpcli perps [balance|positions|position|markets|market|deposit|withdraw|trade|close|cancel|sl|tp]');
+        console.error(`Unknown pacific subcommand: ${subcommand}`);
+        console.error('Usage: lpcli pacific [balance|positions|position|markets|market|deposit|withdraw|trade|close|cancel|sl|tp]');
         process.exit(1);
     }
   } catch (err: unknown) {
