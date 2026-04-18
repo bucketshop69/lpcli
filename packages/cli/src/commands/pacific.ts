@@ -12,7 +12,7 @@
  *   lpcli pacific trade <symbol> <long|short> <size>  Place a market order
  *   lpcli pacific close <symbol>                      Close an open position
  *   lpcli pacific cancel [symbol]                     Cancel open orders
- *   lpcli pacific limit ...                           Limit / RSI conditional orders
+ *   lpcli pacific limit ...                           Limit / RSI conditional orders (timeframe as positional or --tf)
  *   lpcli pacific rsi <symbol> [timeframe]            RSI indicator
  *   lpcli pacific sl <symbol> <price>                 Set stop-loss
  *   lpcli pacific tp <symbol> <price>                 Set take-profit

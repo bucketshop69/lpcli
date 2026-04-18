@@ -766,19 +766,30 @@ async function runLimit(args: string[]): Promise<void> {
 
   const priceVal = priceIdx >= 0 ? args[priceIdx + 1] : undefined;
   const rsiVal = rsiIdx >= 0 ? args[rsiIdx + 1] : undefined;
-  const tfVal = (tfIdx >= 0 ? args[tfIdx + 1] : '15m') as PacificaKlineInterval;
+
+  // Timeframe: accept --tf <tf> or bare positional after --rsi value (e.g. --rsi ">60" 5m)
+  let tfVal: PacificaKlineInterval = '15m';
+  if (tfIdx >= 0 && args[tfIdx + 1]) {
+    tfVal = args[tfIdx + 1] as PacificaKlineInterval;
+  } else if (rsiIdx >= 0) {
+    const candidate = args[rsiIdx + 2];
+    if (candidate && !candidate.startsWith('-') && PACIFICA_KLINE_INTERVALS.includes(candidate as PacificaKlineInterval)) {
+      tfVal = candidate as PacificaKlineInterval;
+    }
+  }
 
   if (!symbol || !direction) {
     console.error(`Usage:
   lpcli pacific limit <symbol> <long|short> <size> --price <price>
-  lpcli pacific limit <symbol> <long|short> <size> --rsi "<op><value>" [--tf <timeframe>]
+  lpcli pacific limit <symbol> <long|short> <size> --rsi "<op><value>" [<timeframe>]
   lpcli pacific limit <symbol> close --price <price>
-  lpcli pacific limit <symbol> close --rsi "<op><value>" [--tf <timeframe>]
+  lpcli pacific limit <symbol> close --rsi "<op><value>" [<timeframe>]
 
 Examples:
-  lpcli pacific limit SOL long 0.1 --price 80        Price-based limit (server-side)
-  lpcli pacific limit SOL long 0.1 --rsi ">55" --tf 15m   RSI-triggered (client-side)
-  lpcli pacific limit SOL close --rsi "<45" --tf 1h   Close position when RSI drops`);
+  lpcli pacific limit SOL long 0.1 --price 80             Price-based limit (server-side)
+  lpcli pacific limit SOL long 0.1 --rsi ">55" 15m        RSI-triggered (client-side)
+  lpcli pacific limit SOL close --rsi "<45" 1h             Close when RSI drops
+  lpcli pacific limit SOL long 0.1 --rsi ">55" --tf 15m   --tf flag also works`);
     process.exit(1);
   }
 
@@ -1062,7 +1073,7 @@ Usage:
   lpcli pacific close <symbol>                      Close an open position
   lpcli pacific cancel [symbol]                     Cancel open orders (optional symbol filter)
   lpcli pacific limit <symbol> <long|short|close> [size] --price <p>    Limit order (server-side)
-  lpcli pacific limit <symbol> <long|short|close> [size] --rsi "<cond>" [--tf <tf>]  RSI conditional
+  lpcli pacific limit <symbol> <long|short|close> [size] --rsi "<cond>" [<tf>]       RSI conditional
   lpcli pacific rsi <symbol> [timeframe]            RSI indicator (default 15m)
   lpcli pacific sl <symbol> <price>                 Set stop-loss on a position
   lpcli pacific tp <symbol> <price>                 Set take-profit on a position

@@ -29,6 +29,7 @@ import { runOpen } from './commands/open.js';
 import { runClose } from './commands/close.js';
 import { runClaim } from './commands/claim.js';
 import { runSwap } from './commands/swap.js';
+import { runTransfer } from './commands/transfer.js';
 
 const [, , command, ...args] = process.argv;
 
@@ -82,6 +83,10 @@ async function main(): Promise<void> {
       await runSwap(args);
       break;
 
+    case 'transfer':
+      await runTransfer(args);
+      break;
+
     case undefined:
     case '--help':
     case '-h':
@@ -104,6 +109,7 @@ Usage:
   lpcli meteora                Meteora DLMM (discover, open, close, swap, ...)
   lpcli pacific                Pacifica perpetuals
   lpcli wallet                 Wallet operations (balance, transfer)
+  lpcli transfer               Interactive token transfer (pick token → recipient → send)
   lpcli predict                Polymarket prediction markets
   lpcli eliza                  Conversational DeFi agent
 
