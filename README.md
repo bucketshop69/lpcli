@@ -1,6 +1,6 @@
 # LPCLI
 
-Agentic DeFi platform for Solana — Meteora DLMM liquidity, pacific perpetuals, Jupiter swaps, and a conversational AI agent. Terminal, MCP, and ElizaOS interfaces sharing one SDK.
+Terminal-first agentic DeFi platform for Solana — one SDK for liquidity provision, perps, swaps, and prediction markets, with MCP and conversational AI interfaces.
 
 Built on [Open Wallet Standard](https://github.com/open-wallet-standard/core). Private keys never leave your machine.
 
@@ -56,7 +56,7 @@ lpcli positions                               # Live P&L, in/out of range
 lpcli close                                   # Interactive close + swap-back
 ```
 
-### pacific — Perpetuals Trading
+### Pacific — Perpetuals Trading
 
 Market and limit orders, stop-loss/take-profit, RSI-conditional entries, up to 20x leverage.
 
@@ -67,13 +67,42 @@ lpcli perps sl SOL 120                        # Stop-loss
 lpcli perps tp SOL 160                        # Take-profit
 lpcli perps limit SOL long 0.5 --rsi "<30"    # Buy when RSI drops below 30
 lpcli perps rsi SOL                           # Current RSI indicator
+lpcli perps balance                           # Account equity and margin
+lpcli perps deposit 100                       # Deposit USDC
+lpcli perps withdraw 50                       # Withdraw USDC
 lpcli perps cancel SOL                        # Cancel orders
+```
+
+### Monitor — Watcher Engine
+
+Run multiple watchers concurrently — RSI, price, funding rate, pool APR. Conditions are evaluated on candle-synced intervals and trigger actions (alert, trade, close, webhook).
+
+```bash
+lpcli monitor add                             # Interactive watcher creation
+lpcli monitor list                            # Active watchers + status
+lpcli monitor run                             # Start the watcher engine
+lpcli monitor remove <id>                     # Remove a watcher
+lpcli monitor clear                           # Remove all watchers
 ```
 
 ### Jupiter — Token Swaps
 
 ```bash
 lpcli swap                                    # Interactive swap via Jupiter
+```
+
+### Wallet
+
+```bash
+lpcli wallet address                          # Show wallet address
+lpcli wallet balance                          # SOL + SPL token balances
+lpcli transfer                                # Interactive token transfer
+```
+
+### Polymarket — Prediction Markets
+
+```bash
+lpcli predict deposit-address                 # Deposit addresses for funding
 ```
 
 ### ElizaOS — Conversational Agent
@@ -119,19 +148,21 @@ Agent / CLI / ElizaOS
 ```
 lpcli/
 ├── packages/
-│   ├── core/          # @lpcli/core  — SDK (all DeFi logic)
-│   ├── cli/           # @lpcli/cli   — terminal commands
-│   ├── mcp/           # @lpcli/mcp   — MCP server for AI agents
-│   ├── eliza/         # @lpcli/eliza — ElizaOS plugin (17 actions)
-│   ├── x402/          # @lpcli/x402  — HTTP + payment layer
-│   └── skills/        # @lpcli/skills — agent skill definitions
+│   ├── core/          # @lpcli/core    — SDK (all DeFi logic)
+│   ├── cli/           # @lpcli/cli     — terminal commands
+│   ├── monitor/       # @lpcli/monitor — watcher engine (RSI, price, funding, APR)
+│   ├── mcp/           # @lpcli/mcp     — MCP server for AI agents
+│   ├── eliza/         # @lpcli/eliza   — ElizaOS plugin (17 actions)
+│   ├── x402/          # @lpcli/x402    — HTTP + payment layer
+│   └── skills/        # @lpcli/skills  — agent skill definitions
 ```
 
 ```
-@lpcli/core  ←── cli   (terminal)
-             ←── mcp   (AI agents via MCP)
-             ←── eliza  (conversational agent)
-             ←── x402  (HTTP + payments)
+@lpcli/core    ←── cli     (terminal)
+               ←── monitor (watcher engine)
+               ←── mcp     (AI agents via MCP)
+               ←── eliza   (conversational agent)
+               ←── x402    (HTTP + payments)
 ```
 
 All interfaces share one SDK. A trade placed from the terminal uses the same code path as one triggered by the AI agent.
