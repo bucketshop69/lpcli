@@ -143,5 +143,8 @@ export type {
 } from './magicblock.js';
 export { MagicBlockClient, MAGICBLOCK_API_URL, executePrivateTransfer, signAndSendMagicBlockTx } from './magicblock.js';
 
+// Burner wallet (auto-managed for private operations)
+export { ensureBurnerWallet, fundBurner, BURNER_WALLET_NAME } from './burner.js';
+
 // LPCLI
 export { LPCLI } from './lpcli.js';

@@ -24,6 +24,7 @@ import type { JupiterSwapResult } from './jup.js';
 import { fundedOpen, fundedClose, fundedClaim } from './funding.js';
 import { TokenRegistry } from './tokens.js';
 import { Connection } from '@solana/web3.js';
+import { ensureBurnerWallet, fundBurner, BURNER_WALLET_NAME } from './burner.js';
 
 export class LPCLI {
   public meteora: MeteoraClient;
@@ -200,6 +201,83 @@ export class LPCLI {
       wallet,
       dlmm: this.dlmm!,
     });
+  }
+
+  // ============================================================================
+  // Private (burner wallet) operations
+  // ============================================================================
+
+  /**
+   * Open a position privately via burner wallet.
+   *
+   * Flow:
+   * 1. Ensure burner wallet exists (auto-create via OWS if needed)
+   * 2. Fund burner with funding token via MagicBlock PER (private)
+   * 3. Send small SOL for gas (public — known limitation)
+   * 4. Open position from burner wallet using existing fundedOpen flow
+   *
+   * On-chain: no link between main wallet and burner → position is private.
+   */
+  async openPrivate(params: {
+    pool: string;
+    amount: number;       // smallest units of funding token
+    ratioX?: number;
+    strategy?: 'spot' | 'bidask' | 'curve';
+    widthBins?: number;
+  }): Promise<FundedOpenResult & { burnerAddress: string; fundTx: string; gasTx?: string }> {
+    const mainWallet = await this.getWallet();
+    const funding = this.getFundingToken();
+
+    // 1. Ensure burner wallet
+    const burnerWallet = await ensureBurnerWallet(this.config.rpcUrl);
+    const burnerAddress = burnerWallet.getPublicKey().toBase58();
+
+    // 2. Fund burner via PER (amount is in smallest units, convert to UI for PER)
+    const uiAmount = params.amount / (10 ** funding.decimals);
+    const { transfer, gasTx } = await fundBurner(
+      mainWallet,
+      burnerWallet,
+      uiAmount,
+      funding.mint,
+    );
+
+    // 3. Open position from burner
+    const burnerDlmm = new DLMMService({
+      rpcUrl: this.config.rpcUrl,
+      readRpcUrl: this.config.readRpcUrl,
+      wallet: burnerWallet,
+      cluster: this.config.cluster,
+      tokenRegistry: this.tokenRegistry,
+    });
+
+    const result = await fundedOpen({
+      pool: params.pool,
+      amount: params.amount,
+      config: this.config,
+      wallet: burnerWallet,
+      dlmm: burnerDlmm,
+      ratioX: params.ratioX,
+      strategy: params.strategy,
+      widthBins: params.widthBins,
+    });
+
+    return {
+      ...result,
+      burnerAddress,
+      fundTx: transfer.txSignature,
+      gasTx,
+    };
+  }
+
+  /**
+   * Get the burner wallet's address, or null if it doesn't exist yet.
+   */
+  async getBurnerWallet(): Promise<WalletService | null> {
+    try {
+      return await WalletService.init(BURNER_WALLET_NAME, this.config.rpcUrl);
+    } catch {
+      return null;
+    }
   }
 
   // ============================================================================

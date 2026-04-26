@@ -7,7 +7,7 @@
  * Session state tracks discover results and multi-step flows (e.g. open position).
  */
 
-import { LPCLI, PacificaClient, WatcherStore, SOL_MINT, MagicBlockClient, executePrivateTransfer, signAndSendMagicBlockTx } from './deps.js';
+import { LPCLI, PacificaClient, WatcherStore, SOL_MINT, MagicBlockClient, executePrivateTransfer, signAndSendMagicBlockTx, ensureBurnerWallet, fundBurner } from './deps.js';
 import type { DiscoveredPool, FundedOpenResult, Condition, Action } from './deps.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ function dim(s: string): OutputLine { return text(s, { dim: true }); }
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface PendingOpen {
-  step: 'amount' | 'strategy' | 'confirm';
+  step: 'amount' | 'strategy' | 'confirm' | 'visibility';
   pool: DiscoveredPool;
   amount?: number;         // UI amount in funding token
   strategy?: 'spot' | 'bidask' | 'curve';
@@ -55,6 +55,7 @@ export function getPlaceholder(): string {
       case 'amount': return 'amount (e.g. 200), or /cancel';
       case 'strategy': return '1-3 or spot/bidask/curve, enter for spot';
       case 'confirm': return 'y to confirm, anything else to cancel';
+      case 'visibility': return '1 for public, 2 for private';
     }
   }
   if (session.lastDiscover.length > 0) {
@@ -261,13 +262,27 @@ async function handlePendingOpen(input: string): Promise<OutputLine[]> {
     ];
   }
 
-  // ── Step 3: confirm & execute ──────────────────────────────────────────
+  // ── Step 3: confirm → ask visibility ────────────────────────────────────
   if (pending.step === 'confirm') {
     if (input.toLowerCase() !== 'y') {
       session.pendingOpen = undefined;
       return [dim('  aborted')];
     }
 
+    pending.step = 'visibility';
+    return [
+      blank,
+      bold('  Visibility:'),
+      text('  1) public    — open directly from your wallet'),
+      text('  2) private   — route through MagicBlock PER (burner wallet)'),
+      blank,
+      bold('  Pick 1 or 2 (enter for public):'),
+    ];
+  }
+
+  // ── Step 4: visibility & execute ──────────────────────────────────────
+  if (pending.step === 'visibility') {
+    const isPrivate = input === '2' || input.toLowerCase() === 'private';
     const pool = pending.pool;
     const amount = pending.amount!;
     const strategy = pending.strategy!;
@@ -277,29 +292,61 @@ async function handlePendingOpen(input: string): Promise<OutputLine[]> {
 
     try {
       const lpcli = new LPCLI();
-      const wallet = await lpcli.getWallet();
       const funding = lpcli.getFundingToken();
-
       const amountSmallest = Math.floor(amount * 10 ** funding.decimals);
 
-      const result: FundedOpenResult = await lpcli.openWithFunding({
-        pool: pool.pool_address,
-        amount: amountSmallest,
-        ratioX: 0.5,
-        strategy,
-      });
+      if (isPrivate) {
+        // Private flow: fund burner via PER → open from burner
+        const lines: OutputLine[] = [
+          blank,
+          dim('  Setting up private position...'),
+          dim('  Creating burner wallet (if needed)...'),
+        ];
 
-      const pos = result.position;
-      return [
-        blank,
-        bold('  Position opened!'),
-        blank,
-        text(`  Position:  ${pos.position.slice(0, 12)}..`),
-        text(`  Range:     ${pos.range_low.toFixed(6)} — ${pos.range_high.toFixed(6)}`),
-        text(`  Deposited: ${pos.deposited_x_ui.toFixed(4)} ${pos.token_x_symbol}  +  ${pos.deposited_y_ui.toFixed(4)} ${pos.token_y_symbol}`),
-        text(`  TX:        ${pos.tx}`),
-        text(`  Swaps:     ${result.swaps.length}`),
-      ];
+        const result = await lpcli.openPrivate({
+          pool: pool.pool_address,
+          amount: amountSmallest,
+          ratioX: 0.5,
+          strategy,
+        });
+
+        const pos = result.position;
+        return [
+          ...lines,
+          blank,
+          bold('  Private position opened!'),
+          blank,
+          text(`  Position:  ${pos.position.slice(0, 12)}..`),
+          text(`  Burner:    ${result.burnerAddress.slice(0, 12)}..`),
+          text(`  Range:     ${pos.range_low.toFixed(6)} — ${pos.range_high.toFixed(6)}`),
+          text(`  Deposited: ${pos.deposited_x_ui.toFixed(4)} ${pos.token_x_symbol}  +  ${pos.deposited_y_ui.toFixed(4)} ${pos.token_y_symbol}`),
+          text(`  Fund TX:   ${result.fundTx}`),
+          text(`  Open TX:   ${pos.tx}`),
+          result.gasTx ? text(`  Gas TX:    ${result.gasTx}`) : blank,
+          blank,
+          dim('  No on-chain link between your main wallet and this position.'),
+        ];
+      } else {
+        // Public flow: open directly from main wallet
+        const result: FundedOpenResult = await lpcli.openWithFunding({
+          pool: pool.pool_address,
+          amount: amountSmallest,
+          ratioX: 0.5,
+          strategy,
+        });
+
+        const pos = result.position;
+        return [
+          blank,
+          bold('  Position opened!'),
+          blank,
+          text(`  Position:  ${pos.position.slice(0, 12)}..`),
+          text(`  Range:     ${pos.range_low.toFixed(6)} — ${pos.range_high.toFixed(6)}`),
+          text(`  Deposited: ${pos.deposited_x_ui.toFixed(4)} ${pos.token_x_symbol}  +  ${pos.deposited_y_ui.toFixed(4)} ${pos.token_y_symbol}`),
+          text(`  TX:        ${pos.tx}`),
+          text(`  Swaps:     ${result.swaps.length}`),
+        ];
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return [
@@ -372,7 +419,7 @@ async function cmdWallet(args: string[]): Promise<OutputLine[]> {
   const fundingBal = balances.tokens.find((t: { mint: string }) => t.mint === funding.mint);
 
   const lines: OutputLine[] = [
-    bold('  Wallet'),
+    bold('  Main Wallet'),
     text(`  Address:  ${balances.address}`),
     text(`  SOL:      ${balances.solBalance.toFixed(4)} SOL`),
     text(`  ${funding.symbol}:     ${fundingBal ? fundingBal.uiAmount : 0} ${funding.symbol}`),
@@ -386,6 +433,20 @@ async function cmdWallet(args: string[]): Promise<OutputLine[]> {
         lines.push(text(`  ${addr}  ${t.uiAmount}`));
       }
     }
+  }
+
+  // Show burner wallet if it exists
+  const burner = await lpcli.getBurnerWallet();
+  if (burner) {
+    const burnerBal = await burner.getBalances();
+    const burnerFunding = burnerBal.tokens.find((t: { mint: string }) => t.mint === funding.mint);
+    lines.push(
+      blank,
+      bold('  Burner Wallet (private ops)'),
+      text(`  Address:  ${burnerBal.address}`),
+      text(`  SOL:      ${burnerBal.solBalance.toFixed(4)} SOL`),
+      text(`  ${funding.symbol}:     ${burnerFunding ? burnerFunding.uiAmount : 0} ${funding.symbol}`),
+    );
   }
 
   return lines;
@@ -944,10 +1005,9 @@ async function cmdPrivate(args: string[]): Promise<OutputLine[]> {
 
 async function cmdPrivateFund(args: string[]): Promise<OutputLine[]> {
   const amountStr = args[0];
-  const burnerAddr = args[1]; // optional: explicit burner address
 
   if (!amountStr) {
-    return [dim('  usage: /private fund <amount> [burner_address]')];
+    return [dim('  usage: /private fund <amount>')];
   }
 
   const amount = parseFloat(amountStr);
@@ -957,34 +1017,36 @@ async function cmdPrivateFund(args: string[]): Promise<OutputLine[]> {
 
   try {
     const lpcli = new LPCLI();
-    const wallet = await lpcli.getWallet();
+    const mainWallet = await lpcli.getWallet();
     const funding = lpcli.getFundingToken();
-    const from = wallet.getPublicKey().toBase58();
+    const from = mainWallet.getPublicKey().toBase58();
 
-    // If no burner address given, we need one. For now, transfer to self
-    // (deposits into PER). Full burner wallet management comes later.
-    const to = burnerAddr ?? from;
+    // Ensure burner wallet exists (auto-create if needed)
+    const burnerWallet = await ensureBurnerWallet(lpcli.config.rpcUrl);
+    const burnerAddr = burnerWallet.getPublicKey().toBase58();
 
-    const result = await executePrivateTransfer(wallet, {
-      from,
-      to,
+    // Fund burner via PER + gas
+    const { transfer, gasTx } = await fundBurner(
+      mainWallet,
+      burnerWallet,
       amount,
-      mint: funding.mint,
-      visibility: 'private',
-    });
+      funding.mint,
+    );
 
     const lines: OutputLine[] = [
-      bold('  Private fund complete!'),
+      bold('  Burner funded!'),
       blank,
       text(`  Amount:  ${amount} ${funding.symbol}`),
       text(`  From:    ${from.slice(0, 12)}..`),
-      text(`  To:      ${to.slice(0, 12)}..`),
-      text(`  TX:      ${result.txSignature}`),
+      text(`  Burner:  ${burnerAddr.slice(0, 12)}..`),
+      text(`  TX:      ${transfer.txSignature}`),
     ];
 
-    if (to !== from) {
-      lines.push(blank, dim('  No on-chain link between sender and recipient.'));
+    if (gasTx) {
+      lines.push(dim(`  Gas TX:  ${gasTx} (0.005 SOL for fees)`));
     }
+
+    lines.push(blank, dim('  No on-chain link between main wallet and burner.'));
 
     return lines;
   } catch (err: unknown) {
@@ -1006,12 +1068,33 @@ async function cmdPrivateBalance(): Promise<OutputLine[]> {
       client.getPrivateBalance(address, funding.mint).catch(() => null),
     ]);
 
-    return [
+    const lines: OutputLine[] = [
       bold('  MagicBlock Balances'),
       dim('  ────────────────────────────────────────────────────'),
       text(`  Base (Solana):    ${base ? base.amount : 'unavailable'}`),
       text(`  Ephemeral (PER): ${priv ? priv.amount : 'unavailable'}`),
     ];
+
+    // Show burner wallet balance if it exists
+    const burnerWallet = await lpcli.getBurnerWallet();
+    if (burnerWallet) {
+      const burnerAddr = burnerWallet.getPublicKey().toBase58();
+      const burnerBalances = await burnerWallet.getBalances();
+      const burnerFunding = burnerBalances.tokens.find((t: { mint: string }) => t.mint === funding.mint);
+
+      lines.push(
+        blank,
+        bold('  Burner Wallet'),
+        dim('  ────────────────────────────────────────────────────'),
+        text(`  Address:  ${burnerAddr}`),
+        text(`  SOL:      ${burnerBalances.solBalance.toFixed(4)}`),
+        text(`  ${funding.symbol}:     ${burnerFunding ? burnerFunding.uiAmount : 0}`),
+      );
+    } else {
+      lines.push(blank, dim('  Burner wallet: not created yet (auto-created on first private action)'));
+    }
+
+    return lines;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return [dim(`  balance check failed: ${msg}`)];
