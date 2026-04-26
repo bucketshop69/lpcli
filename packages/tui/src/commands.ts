@@ -322,9 +322,9 @@ async function handlePendingOpen(input: string): Promise<OutputLine[]> {
           text(`  Deposited: ${pos.deposited_x_ui.toFixed(4)} ${pos.token_x_symbol}  +  ${pos.deposited_y_ui.toFixed(4)} ${pos.token_y_symbol}`),
           text(`  Fund TX:   ${result.fundTx}`),
           text(`  Open TX:   ${pos.tx}`),
-          result.gasTx ? text(`  Gas TX:    ${result.gasTx}`) : blank,
-          blank,
-          dim('  No on-chain link between your main wallet and this position.'),
+          ...(result.gasTx
+            ? [text(`  Gas TX:    ${result.gasTx}`), blank, dim('  Token transfer is private via PER. Gas TX creates a small on-chain link (SOL for fees).')]
+            : [blank, dim('  No on-chain link between your main wallet and this position.')]),
         ];
       } else {
         // Public flow: open directly from main wallet
@@ -1043,10 +1043,11 @@ async function cmdPrivateFund(args: string[]): Promise<OutputLine[]> {
     ];
 
     if (gasTx) {
-      lines.push(dim(`  Gas TX:  ${gasTx} (0.005 SOL for fees)`));
+      lines.push(dim(`  Gas TX:  ${gasTx} (0.1 SOL for fees)`));
+      lines.push(blank, dim('  Token transfer is private via PER. Gas TX creates a small on-chain link (SOL for fees).'));
+    } else {
+      lines.push(blank, dim('  No on-chain link between main wallet and burner.'));
     }
-
-    lines.push(blank, dim('  No on-chain link between main wallet and burner.'));
 
     return lines;
   } catch (err: unknown) {

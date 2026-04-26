@@ -154,6 +154,7 @@ export async function runTransfer(args: string[]): Promise<void> {
         to: recipient,
         amount,
         mint: selected.mint,
+        decimals: selected.decimals,
       });
 
       console.log(`\nSent ${amount} ${selected.label} (private)`);

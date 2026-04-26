@@ -31,6 +31,8 @@ export interface PrivateTransferParams {
   amount: number;
   /** SPL token mint. Defaults to USDC. */
   mint?: string;
+  /** Token decimals for UI→base conversion. Defaults to 6 for USDC, required for other tokens. */
+  decimals?: number;
   /** "public" or "private". Defaults to "private". */
   visibility?: 'public' | 'private';
   /** Source balance location. Defaults to "base" (Solana mainnet). */
@@ -271,21 +273,47 @@ export async function signAndSendMagicBlockTx(
   wallet: WalletService,
   unsignedTx: UnsignedTransactionResponse,
 ): Promise<string> {
-  const txBytes = Buffer.from(unsignedTx.transactionBase64, 'base64');
-
-  // Try to deserialize as VersionedTransaction first, fall back to legacy
-  let signature: string;
-  try {
-    const vtx = VersionedTransaction.deserialize(txBytes);
-    const signed = await wallet.signVersionedTx(vtx);
-    signature = await wallet.getConnection().sendRawTransaction(signed.serialize());
-  } catch {
-    const tx = Transaction.from(txBytes);
-    const signed = await wallet.signTx(tx);
-    signature = await wallet.getConnection().sendRawTransaction(signed.serialize());
+  if (unsignedTx.sendTo === 'ephemeral') {
+    const endpoint = unsignedTx.validator;
+    if (!endpoint) {
+      throw new Error('MagicBlock returned sendTo: "ephemeral" but no validator URL');
+    }
+    const { Connection: EphConnection } = await import('@solana/web3.js');
+    const ephConn = new EphConnection(endpoint, 'confirmed');
+    return signAndSendToConnection(wallet, unsignedTx, ephConn);
   }
 
-  await wallet.getConnection().confirmTransaction(signature, 'confirmed');
+  return signAndSendToConnection(wallet, unsignedTx, wallet.getConnection());
+}
+
+async function signAndSendToConnection(
+  wallet: WalletService,
+  unsignedTx: UnsignedTransactionResponse,
+  connection: import('@solana/web3.js').Connection,
+): Promise<string> {
+  const txBytes = Buffer.from(unsignedTx.transactionBase64, 'base64');
+
+  // Detect format: versioned transactions start with a version prefix byte
+  let isVersioned = false;
+  try {
+    VersionedTransaction.deserialize(txBytes);
+    isVersioned = true;
+  } catch {
+    // Not a versioned transaction — use legacy
+  }
+
+  let signature: string;
+  if (isVersioned) {
+    const vtx = VersionedTransaction.deserialize(txBytes);
+    const signed = await wallet.signVersionedTx(vtx);
+    signature = await connection.sendRawTransaction(signed.serialize());
+  } else {
+    const tx = Transaction.from(txBytes);
+    const signed = await wallet.signTx(tx);
+    signature = await connection.sendRawTransaction(signed.serialize());
+  }
+
+  await connection.confirmTransaction(signature, 'confirmed');
   return signature;
 }
 
@@ -310,12 +338,14 @@ export async function executePrivateTransfer(
   const visibility = params.visibility ?? 'private';
 
   // Convert UI amount to base units
-  // For USDC: 6 decimals. For other tokens we'd need to fetch decimals.
-  // For now, if mint is USDC use 6, otherwise caller must pass base units.
-  const decimals = mint === USDC_MINT ? 6 : 0;
-  const baseAmount = decimals > 0
-    ? Math.floor(params.amount * 10 ** decimals)
-    : params.amount;
+  const decimals = params.decimals ?? (mint === USDC_MINT ? 6 : undefined);
+  if (decimals === undefined) {
+    throw new Error(
+      `executePrivateTransfer: decimals required for non-USDC token ${mint.slice(0, 8)}...\n` +
+      `Pass { decimals } in params or use USDC (auto-detected as 6).`
+    );
+  }
+  const baseAmount = Math.floor(params.amount * 10 ** decimals);
 
   const unsignedTx = await c.buildTransfer({
     from,

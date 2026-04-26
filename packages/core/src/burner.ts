@@ -17,8 +17,13 @@ import type { PrivateTransferResult } from './magicblock.js';
 /** OWS wallet name for the burner. */
 export const BURNER_WALLET_NAME = 'lpcli-burner';
 
-/** Minimum SOL needed for gas fees on burner wallet. */
-const MIN_GAS_SOL = 0.005;
+/**
+ * Minimum SOL the burner needs for a position open:
+ * - 0.06 SOL position account rent (POSITION_RENT_LAMPORTS)
+ * - 0.02 SOL fee reserve (DEFAULT_FEE_RESERVE_SOL)
+ * - 0.02 SOL margin for swap tx fees
+ */
+const MIN_GAS_SOL = 0.1;
 
 // ============================================================================
 // OWS SDK — wallet creation
