@@ -1,34 +1,32 @@
 {
-  "name": "@lpcli/cli",
+  "name": "@lpcli/tui",
   "version": "0.1.0",
   "type": "module",
-  "description": "CLI for LPCLI — terminal interface for Meteora DLMM",
-  "bin": {
-    "lpcli": "./dist/index.js"
-  },
+  "description": "Chat-first terminal UI for lpcli — Ink REPL shell",
   "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "dev": "node --import tsx src/index.ts"
+    "dev": "node --import tsx src/index.tsx"
   },
   "dependencies": {
-    "@clack/prompts": "^1.2.0",
     "@lpcli/core": "workspace:*",
     "@lpcli/monitor": "workspace:*",
-    "@lpcli/tui": "workspace:*",
     "ink": "^5.1.0",
+    "ink-text-input": "^6.0.0",
     "react": "^18.3.1"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@types/node": "^22.15.3",
     "@types/react": "^18.3.18",
-    "tsx": "^4.7.0",
-    "typescript": "^5.4.0"
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
   }
 }
