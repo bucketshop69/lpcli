@@ -43,6 +43,8 @@ interface PendingOpen {
 const session = {
   lastDiscover: [] as DiscoveredPool[],
   pendingOpen: undefined as PendingOpen | undefined,
+  /** Position addresses that belong to the burner wallet. */
+  burnerPositions: new Set<string>(),
 };
 
 /**
@@ -509,7 +511,24 @@ async function cmdMeteoraPositions(): Promise<OutputLine[]> {
   const addr = wallet.getPublicKey().toBase58();
   const positions = await dlmm.getPositions(addr);
 
-  if (positions.length === 0) {
+  // Also fetch burner positions
+  const burnerWallet = await lpcli.getBurnerWallet();
+  let burnerPositions: typeof positions = [];
+  if (burnerWallet) {
+    const burnerAddr = burnerWallet.getPublicKey().toBase58();
+    try {
+      burnerPositions = await dlmm.getPositions(burnerAddr);
+      // Track burner position addresses for close detection
+      session.burnerPositions.clear();
+      for (const bp of burnerPositions) {
+        session.burnerPositions.add(bp.address);
+      }
+    } catch { /* burner has no positions */ }
+  }
+
+  const allPositions = [...positions, ...burnerPositions];
+
+  if (allPositions.length === 0) {
     return [dim('  no open LP positions')];
   }
 
@@ -518,23 +537,36 @@ async function cmdMeteoraPositions(): Promise<OutputLine[]> {
     dim('  ────────────────────────────────────────────────────'),
   ];
 
-  for (const p of positions) {
-    const status = p.status === 'in_range' ? 'IN RANGE' : 'OUT OF RANGE';
-    const valX = p.current_value_x_ui.toFixed(4);
-    const valY = p.current_value_y_ui.toFixed(4);
-    const feeX = p.fees_earned_x_ui.toFixed(4);
-    const feeY = p.fees_earned_y_ui.toFixed(4);
-    const parts = p.pool_name.split('-');
-    const symX = parts[0] || '?';
-    const symY = parts.slice(1).join('-') || '?';
+  const renderPositions = (posArr: typeof positions, label?: string) => {
+    if (label && posArr.length > 0) {
+      lines.push(blank, dim(`  ${label}`));
+    }
+    for (const p of posArr) {
+      const status = p.status === 'in_range' ? 'IN RANGE' : 'OUT OF RANGE';
+      const valX = p.current_value_x_ui.toFixed(4);
+      const valY = p.current_value_y_ui.toFixed(4);
+      const feeX = p.fees_earned_x_ui.toFixed(4);
+      const feeY = p.fees_earned_y_ui.toFixed(4);
+      const parts = p.pool_name.split('-');
+      const symX = parts[0] || '?';
+      const symY = parts.slice(1).join('-') || '?';
 
-    lines.push(text(`  ${p.pool_name}  ${status}`, { bold: p.status === 'in_range' }));
-    lines.push(dim(`    value: ${valX} ${symX} + ${valY} ${symY}  |  fees: ${feeX} ${symX} + ${feeY} ${symY}`));
-    lines.push(dim(`    range: ${p.range_low.toFixed(4)} — ${p.range_high.toFixed(4)}  |  price: ${p.current_price.toFixed(4)}`));
+      lines.push(text(`  ${p.pool_name}  ${status}`, { bold: p.status === 'in_range' }));
+      lines.push(dim(`    ${p.address.slice(0, 12)}..  pool: ${p.pool.slice(0, 8)}..`));
+      lines.push(dim(`    value: ${valX} ${symX} + ${valY} ${symY}  |  fees: ${feeX} ${symX} + ${feeY} ${symY}`));
+      lines.push(dim(`    range: ${p.range_low.toFixed(4)} — ${p.range_high.toFixed(4)}  |  price: ${p.current_price.toFixed(4)}`));
+    }
+  };
+
+  if (burnerPositions.length > 0) {
+    renderPositions(positions, 'Main wallet');
+    renderPositions(burnerPositions, 'Burner wallet (private)');
+  } else {
+    renderPositions(positions);
   }
 
   lines.push(blank);
-  lines.push(dim(`  ${positions.length} position(s)`));
+  lines.push(dim(`  ${allPositions.length} position(s)${burnerPositions.length > 0 ? ` (${burnerPositions.length} private)` : ''}`));
 
   return lines;
 }
@@ -620,6 +652,45 @@ async function cmdMeteoraClose(args: string[]): Promise<OutputLine[]> {
   try {
     const lpcli = new LPCLI();
     await lpcli.getWallet();
+
+    // Determine ownership: check session cache first, then query on-chain
+    let isBurner = session.burnerPositions.has(posAddr);
+    if (!isBurner) {
+      const burnerWallet = await lpcli.getBurnerWallet();
+      if (burnerWallet) {
+        const burnerAddr = burnerWallet.getPublicKey().toBase58();
+        const burnerPositions = await lpcli.dlmm!.getPositions(burnerAddr);
+        for (const bp of burnerPositions) {
+          session.burnerPositions.add(bp.address);
+        }
+        isBurner = session.burnerPositions.has(posAddr);
+      }
+    }
+
+    if (isBurner) {
+      // Private close: close from burner → swap to funding → PER transfer back to main
+      const result = await lpcli.closePrivate(posAddr, poolAddr || posAddr);
+      session.burnerPositions.delete(posAddr);
+
+      const c = result.close;
+      const lines: OutputLine[] = [
+        bold('  Private position closed!'),
+        blank,
+        text(`  Withdrawn: ${c.withdrawn_x_ui.toFixed(4)} ${c.token_x_symbol}  +  ${c.withdrawn_y_ui.toFixed(4)} ${c.token_y_symbol}`),
+        text(`  Fees:      ${c.claimed_fees_x_ui.toFixed(4)} ${c.token_x_symbol}  +  ${c.claimed_fees_y_ui.toFixed(4)} ${c.token_y_symbol}`),
+        text(`  Close TX:  ${c.tx}`),
+        text(`  Swaps:     ${result.swaps.length} swap(s) back to funding token`),
+      ];
+
+      if (result.returnTx) {
+        lines.push(text(`  Return TX: ${result.returnTx} (private, via PER)`));
+        lines.push(blank, dim('  Proceeds returned to main wallet via PER.'));
+      }
+
+      return lines;
+    }
+
+    // Public close: close directly from main wallet
     const result = await lpcli.closeToFunding(posAddr, poolAddr || posAddr);
 
     const c = result.close;
@@ -934,6 +1005,7 @@ async function cmdTransfer(args: string[]): Promise<OutputLine[]> {
         to: address,
         amount,
         mint: funding.mint,
+        decimals: funding.decimals,
       });
 
       return [
@@ -1031,6 +1103,7 @@ async function cmdPrivateFund(args: string[]): Promise<OutputLine[]> {
       burnerWallet,
       amount,
       funding.mint,
+      funding.decimals,
     );
 
     const lines: OutputLine[] = [

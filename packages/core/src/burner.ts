@@ -94,6 +94,7 @@ export async function fundBurner(
   burnerWallet: WalletService,
   amount: number,
   mint: string,
+  decimals: number,
   opts?: { skipGas?: boolean },
 ): Promise<{ transfer: PrivateTransferResult; gasTx?: string }> {
   const burnerAddress = burnerWallet.getPublicKey().toBase58();
@@ -116,6 +117,7 @@ export async function fundBurner(
     to: burnerAddress,
     amount,
     mint,
+    decimals,
     visibility: 'private',
   });
 

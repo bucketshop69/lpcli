@@ -239,6 +239,7 @@ export class LPCLI {
       burnerWallet,
       uiAmount,
       funding.mint,
+      funding.decimals,
     );
 
     // 3. Open position from burner
@@ -278,6 +279,65 @@ export class LPCLI {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Close a position that was opened from the burner wallet, then
+   * transfer the proceeds back to the main wallet via PER (private).
+   *
+   * Flow:
+   * 1. Close position from burner → swaps back to funding token
+   * 2. Transfer funding token from burner → main via PER (private)
+   *
+   * On-chain: burner closes position, proceeds go "somewhere" via PER.
+   */
+  async closePrivate(
+    positionAddress: string,
+    pool: string,
+  ): Promise<FundedCloseResult & { returnTx: string }> {
+    const mainWallet = await this.getWallet();
+    const burnerWallet = await ensureBurnerWallet(this.config.rpcUrl);
+    const funding = this.getFundingToken();
+
+    // 1. Close from burner wallet
+    const burnerDlmm = new DLMMService({
+      rpcUrl: this.config.rpcUrl,
+      readRpcUrl: this.config.readRpcUrl,
+      wallet: burnerWallet,
+      cluster: this.config.cluster,
+      tokenRegistry: this.tokenRegistry,
+    });
+
+    const closeResult = await fundedClose({
+      positionAddress,
+      pool,
+      config: this.config,
+      wallet: burnerWallet,
+      dlmm: burnerDlmm,
+    });
+
+    // 2. Transfer proceeds back to main via PER
+    // Check burner's funding token balance after close + swaps
+    const burnerBalance = await burnerWallet.getTokenBalance(funding.mint);
+    const returnAmount = burnerBalance ? burnerBalance.uiAmount : 0;
+
+    let returnTx = '';
+    if (returnAmount > 0) {
+      const { executePrivateTransfer: execTransfer } = await import('./magicblock.js');
+      const result = await execTransfer(burnerWallet, {
+        to: mainWallet.getPublicKey().toBase58(),
+        amount: returnAmount,
+        mint: funding.mint,
+        decimals: funding.decimals,
+        visibility: 'private',
+      });
+      returnTx = result.txSignature;
+    }
+
+    return {
+      ...closeResult,
+      returnTx,
+    };
   }
 
   // ============================================================================
