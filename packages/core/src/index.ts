@@ -134,5 +134,14 @@ export { placeOrder, getOpenOrders, cancelOrder as cancelPolymarketOrder, cancel
 export type { PolymarketBalance, PolymarketPosition } from './polymarket-positions.js';
 export { getBalance as getPolymarketBalance, getPositions } from './polymarket-positions.js';
 
+// MagicBlock — Private Payments (PERs)
+export type {
+  PrivateTransferParams,
+  PrivateTransferResult,
+  UnsignedTransactionResponse as MagicBlockUnsignedTx,
+  MagicBlockBalance,
+} from './magicblock.js';
+export { MagicBlockClient, MAGICBLOCK_API_URL, executePrivateTransfer, signAndSendMagicBlockTx } from './magicblock.js';
+
 // LPCLI
 export { LPCLI } from './lpcli.js';

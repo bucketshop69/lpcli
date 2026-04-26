@@ -7,7 +7,7 @@
  * Session state tracks discover results and multi-step flows (e.g. open position).
  */
 
-import { LPCLI, PacificaClient, WatcherStore, SOL_MINT } from './deps.js';
+import { LPCLI, PacificaClient, WatcherStore, SOL_MINT, MagicBlockClient, executePrivateTransfer, signAndSendMagicBlockTx } from './deps.js';
 import type { DiscoveredPool, FundedOpenResult, Condition, Action } from './deps.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -117,6 +117,14 @@ export async function runCommand(raw: string): Promise<OutputLine[]> {
     case 'monitor':
     case 'mon':
       return cmdMonitor(args);
+
+    case 'transfer':
+    case 't':
+      return cmdTransfer(args);
+
+    case 'private':
+    case 'priv':
+      return cmdPrivate(args);
 
     case 'cancel':
     case 'c':
@@ -314,6 +322,8 @@ function cmdHelp(): OutputLine[] {
     blank,
     text('  /meteora           LP positions, discover pools, open/close'),
     text('  /pacific           perp positions, balance, markets'),
+    text('  /transfer          send tokens (public or --private)'),
+    text('  /private           private ops via MagicBlock PERs'),
     text('  /monitor           watchers list'),
     text('  /wallet            balance info'),
     text('  /status            overview of everything'),
@@ -328,6 +338,8 @@ function cmdHelp(): OutputLine[] {
     bold('  Flows'),
     blank,
     text('  /meteora discover  → type a number to open that pool'),
+    text('  /transfer <addr> <amt> --private'),
+    text('  /private fund <amt>  fund burner via PER'),
     text('  /cancel            cancel any in-progress flow'),
     blank,
     dim('  /meteora help or /pacific help for subcommands.'),
@@ -815,6 +827,204 @@ async function cmdStatus(): Promise<OutputLine[]> {
   }
 
   return lines;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /transfer
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function cmdTransfer(args: string[]): Promise<OutputLine[]> {
+  const sub = args[0]?.toLowerCase();
+
+  if (!sub || sub === 'help') {
+    return [
+      bold('  Transfer'),
+      blank,
+      text('  /transfer <address> <amount> [--private]'),
+      blank,
+      text('  Sends USDC (funding token) to an address.'),
+      text('  Add --private to route through MagicBlock PER.'),
+      blank,
+      dim('  example: /transfer 7xKp...3mNq 50 --private'),
+    ];
+  }
+
+  const isPrivate = args.includes('--private');
+  const cleanArgs = args.filter((a) => a !== '--private');
+  const address = cleanArgs[0];
+  const amountStr = cleanArgs[1];
+
+  if (!address || !amountStr) {
+    return [dim('  usage: /transfer <address> <amount> [--private]')];
+  }
+
+  const amount = parseFloat(amountStr);
+  if (isNaN(amount) || amount <= 0) {
+    return [dim('  amount must be a positive number')];
+  }
+
+  try {
+    const lpcli = new LPCLI();
+    const wallet = await lpcli.getWallet();
+    const funding = lpcli.getFundingToken();
+
+    if (isPrivate) {
+      const result = await executePrivateTransfer(wallet, {
+        to: address,
+        amount,
+        mint: funding.mint,
+      });
+
+      return [
+        bold('  Private transfer sent!'),
+        blank,
+        text(`  Amount:     ${amount} ${funding.symbol}`),
+        text(`  To:         ${address.slice(0, 12)}..`),
+        text(`  Visibility: private (MagicBlock PER)`),
+        text(`  TX:         ${result.txSignature}`),
+        blank,
+        dim('  No on-chain link between sender and recipient.'),
+      ];
+    } else {
+      const rawAmount = Math.floor(amount * 10 ** funding.decimals);
+      const result = await wallet.transferToken({
+        to: address,
+        mint: funding.mint,
+        amount: rawAmount,
+      });
+
+      return [
+        bold('  Transfer sent!'),
+        blank,
+        text(`  Amount:  ${amount} ${funding.symbol}`),
+        text(`  To:      ${address.slice(0, 12)}..`),
+        text(`  TX:      ${result.signature}`),
+      ];
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return [dim(`  transfer failed: ${msg}`)];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /private
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function cmdPrivate(args: string[]): Promise<OutputLine[]> {
+  const sub = args[0]?.toLowerCase();
+
+  if (!sub || sub === 'help') {
+    return [
+      bold('  Private (MagicBlock PERs)'),
+      blank,
+      text('  /private fund <amount>     fund burner wallet via PER'),
+      text('  /private balance           check PER balance'),
+      text('  /private health            check MagicBlock API status'),
+      blank,
+      dim('  Private transfers break the on-chain link between wallets.'),
+      dim('  Uses MagicBlock Private Ephemeral Rollups (TEE-based).'),
+    ];
+  }
+
+  if (sub === 'fund') {
+    return cmdPrivateFund(args.slice(1));
+  }
+
+  if (sub === 'balance' || sub === 'bal') {
+    return cmdPrivateBalance();
+  }
+
+  if (sub === 'health') {
+    return cmdPrivateHealth();
+  }
+
+  return [dim(`  unknown: /private ${sub} — try /private help`)];
+}
+
+async function cmdPrivateFund(args: string[]): Promise<OutputLine[]> {
+  const amountStr = args[0];
+  const burnerAddr = args[1]; // optional: explicit burner address
+
+  if (!amountStr) {
+    return [dim('  usage: /private fund <amount> [burner_address]')];
+  }
+
+  const amount = parseFloat(amountStr);
+  if (isNaN(amount) || amount <= 0) {
+    return [dim('  amount must be a positive number')];
+  }
+
+  try {
+    const lpcli = new LPCLI();
+    const wallet = await lpcli.getWallet();
+    const funding = lpcli.getFundingToken();
+    const from = wallet.getPublicKey().toBase58();
+
+    // If no burner address given, we need one. For now, transfer to self
+    // (deposits into PER). Full burner wallet management comes later.
+    const to = burnerAddr ?? from;
+
+    const result = await executePrivateTransfer(wallet, {
+      from,
+      to,
+      amount,
+      mint: funding.mint,
+      visibility: 'private',
+    });
+
+    const lines: OutputLine[] = [
+      bold('  Private fund complete!'),
+      blank,
+      text(`  Amount:  ${amount} ${funding.symbol}`),
+      text(`  From:    ${from.slice(0, 12)}..`),
+      text(`  To:      ${to.slice(0, 12)}..`),
+      text(`  TX:      ${result.txSignature}`),
+    ];
+
+    if (to !== from) {
+      lines.push(blank, dim('  No on-chain link between sender and recipient.'));
+    }
+
+    return lines;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return [dim(`  private fund failed: ${msg}`)];
+  }
+}
+
+async function cmdPrivateBalance(): Promise<OutputLine[]> {
+  try {
+    const lpcli = new LPCLI();
+    const wallet = await lpcli.getWallet();
+    const funding = lpcli.getFundingToken();
+    const address = wallet.getPublicKey().toBase58();
+    const client = new MagicBlockClient();
+
+    const [base, priv] = await Promise.all([
+      client.getBalance(address, funding.mint).catch(() => null),
+      client.getPrivateBalance(address, funding.mint).catch(() => null),
+    ]);
+
+    return [
+      bold('  MagicBlock Balances'),
+      dim('  ────────────────────────────────────────────────────'),
+      text(`  Base (Solana):    ${base ? base.amount : 'unavailable'}`),
+      text(`  Ephemeral (PER): ${priv ? priv.amount : 'unavailable'}`),
+    ];
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return [dim(`  balance check failed: ${msg}`)];
+  }
+}
+
+async function cmdPrivateHealth(): Promise<OutputLine[]> {
+  const client = new MagicBlockClient();
+  const healthy = await client.healthCheck();
+
+  return [
+    text(`  MagicBlock API: ${healthy ? 'online' : 'unreachable'}`, { bold: healthy }),
+  ];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

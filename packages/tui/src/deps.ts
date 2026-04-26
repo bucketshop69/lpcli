@@ -4,7 +4,8 @@
  * Keeps commands.ts cleaner and gives us one place to adjust imports.
  */
 
-export { LPCLI, PacificaClient, SOL_MINT } from '@lpcli/core';
+export { LPCLI, PacificaClient, SOL_MINT, MagicBlockClient, executePrivateTransfer, signAndSendMagicBlockTx } from '@lpcli/core';
+export type { PrivateTransferResult, MagicBlockBalance } from '@lpcli/core';
 export type {
   DiscoveredPool,
   FundedOpenResult,
