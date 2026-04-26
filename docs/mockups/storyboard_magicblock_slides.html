@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>lpcli + MagicBlock PERs — Hackathon Demo Storyboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bubblegum+Sans&family=Space+Mono:wght@400;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #000000;
+    --bg-terminal: #080808;
+    --white: #ffffff;
+    --white-dim: #cccccc;
+    --gray: #888888;
+    --gray-dark: #222222;
+    --gray-subtle: #555555;
+  }
+
+  body {
+    background: #000000;
+    color: var(--white);
+    font-family: 'Bubblegum Sans', cursive;
+    padding: 40px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 36px;
+    color: var(--white);
+    margin-bottom: 8px;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: var(--gray);
+    font-size: 14px;
+    margin-bottom: 48px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .scene {
+    background: var(--bg);
+    border: 1px solid var(--gray-dark);
+    border-radius: 12px;
+    margin-bottom: 40px;
+    overflow: hidden;
+  }
+
+  .scene-header {
+    background: #111111;
+    border-bottom: 1px solid var(--gray-dark);
+    padding: 14px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .scene-header .label {
+    font-size: 18px;
+    color: var(--white);
+  }
+
+  .scene-header .timing {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    color: var(--gray);
+  }
+
+  .scene-body {
+    width: 100%;
+    aspect-ratio: 16/9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .scene-notes {
+    border-top: 1px solid var(--gray-dark);
+    padding: 14px 24px;
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    color: var(--gray-subtle);
+    line-height: 1.6;
+  }
+
+  /* ── Terminal window ── */
+  .terminal {
+    background: var(--bg-terminal);
+    border: 1px solid var(--gray-dark);
+    border-radius: 10px;
+    width: 56%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+
+  .terminal-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 16px;
+    background: #111;
+    border-bottom: 1px solid var(--gray-dark);
+  }
+
+  .terminal-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--white);
+  }
+
+  .terminal-dot:nth-child(1) { opacity: 0.3; }
+  .terminal-dot:nth-child(2) { opacity: 0.2; }
+  .terminal-dot:nth-child(3) { opacity: 0.15; }
+
+  .terminal-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    color: var(--gray);
+    margin-left: 8px;
+  }
+
+  .terminal-body {
+    padding: 22px 26px;
+    font-family: 'Space Mono', monospace;
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--white);
+    min-height: 300px;
+  }
+
+  .terminal-body .prompt { color: var(--gray); }
+  .terminal-body .cmd { color: var(--white); font-weight: 700; }
+  .terminal-body .dim { color: var(--white-dim); }
+  .terminal-body .subtle { color: var(--gray-subtle); }
+  .terminal-body .muted { color: var(--gray); }
+  .terminal-body .bold { font-weight: 700; color: var(--white); }
+
+  /* ── Tooltip sidebar ── */
+  .tooltip-col {
+    width: 28%;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    padding-left: 32px;
+  }
+
+  .tooltip {
+    border-left: 3px solid var(--gray);
+    padding-left: 20px;
+    font-family: 'Bubblegum Sans', cursive;
+    font-size: 22px;
+    color: var(--white);
+    line-height: 1.5;
+  }
+
+  .tooltip.active {
+    border-left-color: var(--white);
+  }
+
+  .tooltip.inactive {
+    opacity: 0.25;
+  }
+
+  /* ── Full-screen text slides ── */
+  .fulltext {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .fulltext .big {
+    font-size: 56px;
+    color: var(--white);
+    line-height: 1.2;
+  }
+
+  .fulltext .medium {
+    font-size: 36px;
+    color: var(--white-dim);
+  }
+
+  .fulltext .small {
+    font-family: 'Space Mono', monospace;
+    font-size: 18px;
+    color: var(--gray);
+    margin-top: 8px;
+  }
+
+  /* ── Hero box ── */
+  .hero-box {
+    border: 2px solid var(--white);
+    padding: 48px 64px;
+    text-align: center;
+    max-width: 900px;
+  }
+
+  .hero-box .title {
+    font-size: 68px;
+    color: var(--white);
+    line-height: 1.1;
+  }
+
+  .hero-box .sub {
+    font-size: 32px;
+    color: var(--white-dim);
+    margin-top: 10px;
+  }
+
+  .hero-box .detail {
+    font-family: 'Space Mono', monospace;
+    font-size: 24px;
+    color: var(--white-dim);
+    line-height: 2;
+    margin-top: 28px;
+  }
+
+  .hero-box .detail .tag {
+    color: var(--gray);
+  }
+
+  /* ── Flow diagram ── */
+  .flow-diagram {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+  }
+
+  .flow-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+
+  .flow-box {
+    border: 2px solid var(--white);
+    padding: 24px 36px;
+    text-align: center;
+    min-width: 180px;
+  }
+
+  .flow-box .flow-label {
+    font-size: 28px;
+    color: var(--white);
+    font-weight: 700;
+  }
+
+  .flow-box .flow-sub {
+    font-family: 'Space Mono', monospace;
+    font-size: 14px;
+    color: var(--gray);
+    margin-top: 6px;
+  }
+
+  .flow-box.invisible {
+    border-color: var(--gray);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .flow-box.invisible .flow-label {
+    color: var(--gray);
+  }
+
+  .flow-arrow {
+    font-family: 'Space Mono', monospace;
+    font-size: 24px;
+    color: var(--gray);
+    padding: 0 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .flow-arrow .arrow-label {
+    font-size: 12px;
+    color: var(--gray-subtle);
+  }
+
+  .flow-annotations {
+    display: flex;
+    gap: 48px;
+    margin-top: 12px;
+  }
+
+  .flow-annotations .anno {
+    font-family: 'Space Mono', monospace;
+    font-size: 16px;
+    color: var(--white-dim);
+    text-align: center;
+    max-width: 260px;
+    line-height: 1.5;
+  }
+
+  .flow-meteora {
+    border: 2px solid var(--gray);
+    padding: 16px 28px;
+    text-align: center;
+    margin-top: -8px;
+    position: relative;
+    left: 220px;
+  }
+
+  .flow-meteora .flow-label {
+    font-size: 22px;
+    color: var(--white-dim);
+  }
+
+  .flow-meteora .flow-sub {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--gray);
+    margin-top: 4px;
+  }
+
+  .flow-connector {
+    font-family: 'Space Mono', monospace;
+    font-size: 18px;
+    color: var(--gray);
+    position: relative;
+    left: 220px;
+  }
+
+  /* ── CapQuick style ── */
+  .cap-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .cap-stack .cap-line {
+    font-family: 'Space Mono', monospace;
+    font-size: 22px;
+    color: var(--white-dim);
+    text-align: center;
+  }
+
+  .cap-stack .cap-line:first-child {
+    font-size: 28px;
+    color: var(--white);
+    font-weight: 700;
+  }
+
+  /* ── CTA ── */
+  .cta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .cta .logo {
+    font-size: 96px;
+    font-weight: 700;
+    color: var(--white);
+  }
+
+  .cta .tagline {
+    font-size: 40px;
+    color: var(--white);
+  }
+
+  .cta .install {
+    font-family: 'Space Mono', monospace;
+    font-size: 20px;
+    color: var(--white-dim);
+    padding: 14px 36px;
+    border: 1px solid var(--gray-dark);
+    border-radius: 6px;
+    background: var(--bg-terminal);
+  }
+
+  .cta .link {
+    font-family: 'Space Mono', monospace;
+    font-size: 16px;
+    color: var(--gray);
+  }
+
+  .cta .built {
+    font-size: 20px;
+    color: var(--gray);
+    margin-top: 8px;
+  }
+
+  /* ── Terminal + tooltip layout ── */
+  .terminal-scene {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0 5%;
+    gap: 32px;
+  }
+
+  /* ── Stack slide text reveals ── */
+  .stack-lines {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .stack-lines .line {
+    font-size: 40px;
+    color: var(--white);
+    text-align: center;
+    line-height: 1.3;
+  }
+
+  .stack-lines .line.dim {
+    color: var(--white-dim);
+    font-size: 34px;
+  }
+
+  .stack-lines .line.punch {
+    color: var(--gray);
+    font-size: 30px;
+    font-family: 'Space Mono', monospace;
+  }
+</style>
+</head>
+<body>
+
+<h1>lpcli + MagicBlock PERs — Hackathon Demo</h1>
+<div class="subtitle">~75s &middot; 1920x1080 &middot; 30fps &middot; B&W aesthetic &middot; 7 scenes</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 1: The Problem                                           -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <span class="label">Scene 1 — The Problem</span>
+    <span class="timing">0–8s &middot; 240 frames &middot; StackSlide reveals</span>
+  </div>
+  <div class="scene-body">
+    <div class="stack-lines">
+      <div class="line">Every Solana transaction is public</div>
+      <div class="line dim">Your wallet. Your positions. Your strategy.</div>
+      <div class="line punch">Visible to everyone. Frontrunnable.</div>
+    </div>
+  </div>
+  <div class="scene-notes">
+    Reuse: StackSlide pattern (full-screen text reveal, staggered opacity+translateY).<br>
+    Each line fades in ~2s apart. Last line holds for dramatic beat before scene exit.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 2: The Solution                                          -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <span class="label">Scene 2 — The Solution</span>
+    <span class="timing">8–14s &middot; 180 frames &middot; SceneHero box</span>
+  </div>
+  <div class="scene-body">
+    <div class="hero-box">
+      <div class="title">lpcli + MagicBlock PERs</div>
+      <div class="sub">Private transfers and LP positions on Solana</div>
+      <div class="detail">
+        TEE-powered ephemeral rollups break the on-chain link
+      </div>
+    </div>
+  </div>
+  <div class="scene-notes">
+    Reuse: SceneHero bordered-box pattern with spring scale-in.<br>
+    Title types in via heroType(), subtitle fades after, detail line last.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 3: Private Transfer Demo                                 -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <span class="label">Scene 3 — Private Transfer Demo</span>
+    <span class="timing">14–28s &middot; 420 frames &middot; Terminal + Tooltips</span>
+  </div>
+  <div class="scene-body">
+    <div class="terminal-scene">
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <span class="terminal-title">lpcli — transfer</span>
+        </div>
+        <div class="terminal-body">
+          <div><span class="prompt">&#x276F; </span><span class="cmd">lpcli transfer</span></div>
+          <div class="dim">&nbsp;&nbsp;Pick token: USDC</div>
+          <div class="dim">&nbsp;&nbsp;Recipient: 7xKp...3mNq</div>
+          <div class="dim">&nbsp;&nbsp;Amount: 50 USDC</div>
+          <div class="dim">&nbsp;&nbsp;Visibility: [1] public &nbsp;[2] private</div>
+          <div class="bold">&nbsp;&nbsp;&gt; 2</div>
+          <div></div>
+          <div class="subtle">&nbsp;&nbsp;Building private transfer via MagicBlock PER...</div>
+          <div class="subtle">&nbsp;&nbsp;Signing with OWS wallet...</div>
+          <div class="bold">&nbsp;&nbsp;TX: 4xR9...mK2f</div>
+          <div></div>
+          <div class="bold">&nbsp;&nbsp;Done. No on-chain link between sender and recipient.</div>
+        </div>
+      </div>
+      <div class="tooltip-col">
+        <div class="tooltip active">Same transfer flow — just one extra choice</div>
+        <div class="tooltip inactive">MagicBlock handles deposit &rarr; PER &rarr; withdrawal internally</div>
+        <div class="tooltip inactive">On-chain: two unrelated transactions. No trace.</div>
+      </div>
+    </div>
+  </div>
+  <div class="scene-notes">
+    Reuse: Terminal + TypeWriter (command typing) + OutputLines (staggered output) + Tooltip sidebar.<br>
+    TypeWriter types "lpcli transfer" first, then OutputLines reveal each line.<br>
+    Tooltips rotate: each becomes active as corresponding output section appears.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 4: Private LP Position Demo                              -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <span class="label">Scene 4 — Private LP Position Demo</span>
+    <span class="timing">28–48s &middot; 600 frames &middot; Terminal + Tooltips</span>
+  </div>
+  <div class="scene-body">
+    <div class="terminal-scene">
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <span class="terminal-title">lpcli — meteora</span>
+        </div>
+        <div class="terminal-body">
+          <!-- Beat 1: Discover -->
+          <div><span class="prompt">&#x276F; </span><span class="cmd">lpcli meteora discover SOL</span></div>
+          <div class="muted">&nbsp;&nbsp;#&nbsp;&nbsp;Pair&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TVL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Fee/TVL&nbsp;&nbsp;&nbsp;Vol 24h</div>
+          <div class="dim">&nbsp;&nbsp;1&nbsp;&nbsp;SOL-USDC&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$2.1M&nbsp;&nbsp;&nbsp;&nbsp;342%&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$4.2M</div>
+          <div class="bold">&nbsp;&nbsp;2&nbsp;&nbsp;BOAR-SOL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$52K&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1961%&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$361K</div>
+          <div></div>
+          <!-- Beat 2: Select pool + configure -->
+          <div><span class="prompt">&#x276F; </span><span class="cmd">2</span></div>
+          <div class="dim">&nbsp;&nbsp;BOAR-SOL — AgBt...AC6e</div>
+          <div></div>
+          <div class="muted">&nbsp;&nbsp;Your balances:</div>
+          <div class="dim">&nbsp;&nbsp;SOL: &nbsp;0.08 &nbsp;&nbsp;USDC: 200 &nbsp;&nbsp;BOAR: 0</div>
+          <div></div>
+          <div class="dim">&nbsp;&nbsp;Enter amount in USDC: <span class="bold">200</span></div>
+          <div class="dim">&nbsp;&nbsp;Strategy: <span class="bold">spot</span></div>
+          <div></div>
+          <!-- Beat 3: Visibility prompt — the key moment -->
+          <div class="dim">&nbsp;&nbsp;Visibility: [1] public &nbsp;[2] private</div>
+          <div class="bold">&nbsp;&nbsp;&gt; 2</div>
+          <div></div>
+          <!-- Beat 4: PER happens automatically -->
+          <div class="subtle">&nbsp;&nbsp;Routing through MagicBlock PER...</div>
+          <div class="subtle">&nbsp;&nbsp;Funding burner via private tunnel...</div>
+          <div class="subtle">&nbsp;&nbsp;Opening position from burner wallet...</div>
+          <div></div>
+          <div class="bold">&nbsp;&nbsp;Position opened! (private)</div>
+          <div class="bold">&nbsp;&nbsp;Position: 8mNq...4xRp</div>
+          <div class="dim">&nbsp;&nbsp;Deposited: 0.52 SOL + 12847 BOAR</div>
+          <div class="bold">&nbsp;&nbsp;TX: 7fK3...2mRq</div>
+        </div>
+      </div>
+      <div class="tooltip-col">
+        <div class="tooltip active">Normal Meteora flow — discover, pick, configure</div>
+        <div class="tooltip inactive">Same visibility prompt as transfer — one extra choice</div>
+        <div class="tooltip inactive">PER funding + burner wallet handled automatically. No trace back to you.</div>
+      </div>
+    </div>
+  </div>
+  <div class="scene-notes">
+    Reuse: Terminal + TypeWriter + OutputLines + Tooltip. This is the longest scene — the "money shot".<br>
+    Four beats: (1) discover + table, (2) select pool + amount + strategy, (3) visibility prompt (mirrors Scene 3), (4) PER auto-routes behind the scenes.<br>
+    Key design: user never touches burner wallets — they just pick "private" and the system handles the rest.<br>
+    Each beat has its own TypeWriter command entry. Tooltips cycle as beats progress.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 5: How It Works — Full Private LP Lifecycle              -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <span class="label">Scene 5 — How It Works (Full Lifecycle)</span>
+    <span class="timing">48–60s &middot; 360 frames &middot; Flow diagram (NEW component)</span>
+  </div>
+  <div class="scene-body">
+    <div class="flow-diagram">
+      <!-- Row 1: OPEN flow (left to right) -->
+      <div style="font-family: 'Space Mono', monospace; font-size: 14px; color: var(--gray-subtle); letter-spacing: 2px; margin-bottom: -16px;">OPEN</div>
+      <div class="flow-row">
+        <div class="flow-box">
+          <div class="flow-label">MAIN</div>
+          <div class="flow-sub">wallet</div>
+        </div>
+        <div class="flow-arrow">
+          <span>&#x2500;&#x2500;&#x2500;&#x25B6;</span>
+          <span class="arrow-label">deposit</span>
+        </div>
+        <div class="flow-box invisible">
+          <div class="flow-label">PER</div>
+          <div class="flow-sub">(TEE)</div>
+        </div>
+        <div class="flow-arrow">
+          <span>&#x2500;&#x2500;&#x2500;&#x25B6;</span>
+          <span class="arrow-label">withdraw</span>
+        </div>
+        <div class="flow-box">
+          <div class="flow-label">BURNER</div>
+          <div class="flow-sub">wallet</div>
+        </div>
+        <div class="flow-arrow">
+          <span>&#x2500;&#x2500;&#x2500;&#x25B6;</span>
+          <span class="arrow-label">open position</span>
+        </div>
+        <div class="flow-box">
+          <div class="flow-label">METEORA</div>
+          <div class="flow-sub">LP pool</div>
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div style="width: 80%; height: 1px; background: var(--gray-dark); margin: 8px 0;"></div>
+
+      <!-- Row 2: CLOSE flow (right to left) -->
+      <div style="font-family: 'Space Mono', monospace; font-size: 14px; color: var(--gray-subtle); letter-spacing: 2px; margin-bottom: -16px;">CLOSE</div>
+      <div class="flow-row">
+        <div class="flow-box">
+          <div class="flow-label">MAIN</div>
+          <div class="flow-sub">wallet</div>
+        </div>
+        <div class="flow-arrow">
+          <span>&#x25C0;&#x2500;&#x2500;&#x2500;</span>
+          <span class="arrow-label">withdraw</span>
+        </div>
+        <div class="flow-box invisible">
+          <div class="flow-label">PER</div>
+          <div class="flow-sub">(TEE)</div>
+        </div>
+        <div class="flow-arrow">
+          <span>&#x25C0;&#x2500;&#x2500;&#x2500;</span>
+          <span class="arrow-label">deposit</span>
+        </div>
+        <div class="flow-box">
+          <div class="flow-label">BURNER</div>
+          <div class="flow-sub">wallet</div>
+        </div>
+        <div class="flow-arrow">
+          <span>&#x25C0;&#x2500;&#x2500;&#x2500;</span>
+          <span class="arrow-label">close + claim</span>
+        </div>
+        <div class="flow-box">
+          <div class="flow-label">METEORA</div>
+          <div class="flow-sub">LP pool</div>
+        </div>
+      </div>
+
+      <!-- Annotations -->
+      <div class="flow-annotations" style="margin-top: 24px;">
+        <div class="anno">Deposit &amp; withdrawal are visible — could be anyone</div>
+        <div class="anno">PER is invisible — TEE enforced, no on-chain link</div>
+        <div class="anno">Funds return to main wallet on close — full circle</div>
+      </div>
+    </div>
+  </div>
+  <div class="scene-notes">
+    NEW component: FlowDiagram built with styled divs — two rows showing the full lifecycle.<br>
+    OPEN row: MAIN → PER → BURNER → METEORA (WipeIn left-to-right, staggered).<br>
+    CLOSE row: METEORA → BURNER → PER → MAIN (WipeIn right-to-left after open completes).<br>
+    PER boxes styled dimmer to convey "invisible". Annotations ScaleIn last.<br>
+    Key message: funds come back to main on close — it's a full round trip.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 6: Tech Stack                                            -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <span class="label">Scene 6 — Tech Stack</span>
+    <span class="timing">58–65s &middot; 210 frames &middot; CapQuick reveals</span>
+  </div>
+  <div class="scene-body">
+    <div class="cap-stack">
+      <div class="cap-line">MagicBlock Private Ephemeral Rollups</div>
+      <div class="cap-line">Open Wallet Standard (OWS)</div>
+      <div class="cap-line">Meteora DLMM &middot; Pacifica Perps &middot; Jupiter</div>
+      <div class="cap-line" style="margin-top: 16px; color: var(--gray-subtle); font-size: 18px;">One API call. Full privacy.</div>
+    </div>
+  </div>
+  <div class="scene-notes">
+    Reuse: CapQuick pattern — full-screen centered text with scale-in entrance.<br>
+    Each line fades in staggered. Punch line ("One API call...") last with slight delay.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- SCENE 7: CTA                                                   -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="scene">
+  <div class="scene-header">
+    <span class="label">Scene 7 — CTA</span>
+    <span class="timing">65–75s &middot; 300 frames &middot; SceneCTA pattern</span>
+  </div>
+  <div class="scene-body">
+    <div class="cta">
+      <div class="logo">lpcli</div>
+      <div class="tagline">Private DeFi on Solana</div>
+      <div class="install">npm install -g lpcli</div>
+      <div class="link">github.com/bucketshop69/lpcli</div>
+      <div class="built">Built with MagicBlock &middot; Solana</div>
+    </div>
+  </div>
+  <div class="scene-notes">
+    Reuse: SceneCTA pattern — spring scale logo, FadeIn cascade for each element.<br>
+    Tagline changed to "Private DeFi on Solana". Built-with credits MagicBlock.
+  </div>
+</div>
+
+</body>
+</html>

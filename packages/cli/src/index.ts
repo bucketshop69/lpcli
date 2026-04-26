@@ -92,7 +92,16 @@ async function main(): Promise<void> {
       await runMonitor(args);
       break;
 
-    case undefined:
+    case 'tui':
+    case undefined: {
+      // Launch the interactive TUI
+      const { render } = await import('ink');
+      const React = await import('react');
+      const { App } = await import('@lpcli/tui');
+      render(React.createElement(App));
+      break;
+    }
+
     case '--help':
     case '-h':
       printHelp();
