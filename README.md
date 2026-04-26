@@ -1,6 +1,6 @@
 # LPCLI
 
-Terminal-first agentic DeFi platform for Solana — one SDK for liquidity provision, perps, swaps, and prediction markets, with MCP and conversational AI interfaces.
+Terminal-first agentic DeFi platform for Solana — one SDK for liquidity provision, perps, swaps, and prediction markets, with MCP and conversational AI interfaces. Optional privacy via [MagicBlock Private Ephemeral Rollups](https://docs.magicblock.gg/pages/private-ephemeral-rollups-pers/api-reference/per/introduction).
 
 Built on [Open Wallet Standard](https://github.com/open-wallet-standard/core). Private keys never leave your machine.
 
@@ -24,6 +24,9 @@ node packages/cli/dist/index.js init
 Start using:
 
 ```bash
+# Chat-first TUI (autocomplete, command history, guided flows)
+node packages/tui/dist/App.js
+
 # Discover pools
 node packages/cli/dist/index.js discover SOL
 
@@ -91,6 +94,37 @@ lpcli monitor clear                           # Remove all watchers
 lpcli swap                                    # Interactive swap via Jupiter
 ```
 
+### Private Transfers & LP — MagicBlock PERs
+
+Optional privacy for transfers and Meteora positions via [MagicBlock Private Ephemeral Rollups](https://www.magicblock.gg). TEE-powered execution breaks the on-chain link between wallets.
+
+```bash
+lpcli transfer --private                      # Private SPL transfer via PER
+```
+
+In the TUI, the Meteora open flow asks **"public or private?"** at the end. If private:
+
+1. A burner wallet is auto-created (via OWS, transparent to user)
+2. Funding token is transferred to burner through PER (no on-chain link)
+3. Position is opened from burner wallet
+4. On close, proceeds swap back to funding token and return to main via PER
+
+```
+MAIN wallet ──deposit──▶ PER (TEE) ──withdraw──▶ BURNER wallet ──▶ Meteora LP
+                         invisible                 can't trace back
+```
+
+```bash
+# TUI commands
+/transfer <addr> <amt> --private              # Private transfer
+/private fund <amount>                        # Fund burner via PER
+/private balance                              # Check PER + burner balances
+/private health                               # MagicBlock API status
+/meteora discover → open → ... → private      # Private LP position
+/meteora positions                            # Shows main + burner positions
+/meteora close <pos>                          # Auto-detects burner, returns via PER
+```
+
 ### Wallet
 
 ```bash
@@ -148,8 +182,9 @@ Agent / CLI / ElizaOS
 ```
 lpcli/
 ├── packages/
-│   ├── core/          # @lpcli/core    — SDK (all DeFi logic)
+│   ├── core/          # @lpcli/core    — SDK (all DeFi logic + MagicBlock PERs)
 │   ├── cli/           # @lpcli/cli     — terminal commands
+│   ├── tui/           # @lpcli/tui     — Ink-based chat-first REPL
 │   ├── monitor/       # @lpcli/monitor — watcher engine (RSI, price, funding, APR)
 │   ├── mcp/           # @lpcli/mcp     — MCP server for AI agents
 │   ├── eliza/         # @lpcli/eliza   — ElizaOS plugin (17 actions)
@@ -159,6 +194,7 @@ lpcli/
 
 ```
 @lpcli/core    ←── cli     (terminal)
+               ←── tui     (chat-first REPL)
                ←── monitor (watcher engine)
                ←── mcp     (AI agents via MCP)
                ←── eliza   (conversational agent)
