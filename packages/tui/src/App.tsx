@@ -5,11 +5,12 @@
  * All rendering is black and white (bold / dim / normal).
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
 import { AutoInput } from './AutoInput.js';
 import { runCommand, getPlaceholder } from './commands.js';
 import type { OutputLine } from './commands.js';
+import { killServer } from './qvac.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Line renderer — converts OutputLine objects to <Text> elements
@@ -39,9 +40,15 @@ export function App() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // Kill QVAC server on unmount (if we spawned it)
+  useEffect(() => {
+    return () => { killServer(); };
+  }, []);
+
   // Quit on Ctrl+C (also handled by Ink, but be explicit)
   useInput((_input, key) => {
     if (key.ctrl && _input === 'c') {
+      killServer();
       exit();
     }
   });

@@ -1,0 +1,15 @@
+{
+  "serve": {
+    "models": {
+      "whisper": {
+        "model": "WHISPER_TINY",
+        "default": true,
+        "preload": true,
+        "config": {
+          "language": "en",
+          "strategy": "greedy"
+        }
+      }
+    }
+  }
+}

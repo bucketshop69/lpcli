@@ -40,9 +40,26 @@ interface PendingOpen {
   strategy?: 'spot' | 'bidask' | 'curve';
 }
 
+interface TokenOption {
+  label: string;
+  mint: string;       // 'SOL' for native SOL
+  uiAmount: number;
+  decimals: number;
+}
+
+interface PendingTransfer {
+  step: 'token' | 'recipient' | 'amount' | 'visibility' | 'confirm';
+  tokens?: TokenOption[];
+  selected?: TokenOption;
+  recipient?: string;
+  amount?: number;
+  visibility?: 'public' | 'private';
+}
+
 const session = {
   lastDiscover: [] as DiscoveredPool[],
   pendingOpen: undefined as PendingOpen | undefined,
+  pendingTransfer: undefined as PendingTransfer | undefined,
   /** Position addresses that belong to the burner wallet. */
   burnerPositions: new Set<string>(),
 };
@@ -60,6 +77,16 @@ export function getPlaceholder(): string {
       case 'visibility': return '1 for public, 2 for private';
     }
   }
+  const t = session.pendingTransfer;
+  if (t) {
+    switch (t.step) {
+      case 'token': return 'pick a token by number, or /cancel';
+      case 'recipient': return 'recipient address, or /cancel';
+      case 'amount': return `amount (max ${t.selected?.uiAmount}), or /cancel`;
+      case 'visibility': return '1 for public, 2 for private';
+      case 'confirm': return 'y to confirm, anything else to cancel';
+    }
+  }
   if (session.lastDiscover.length > 0) {
     return 'type a number to open, or /command...';
   }
@@ -74,6 +101,9 @@ export async function runCommand(raw: string): Promise<OutputLine[]> {
   const trimmed = raw.trim();
 
   // ── Handle multi-step flows first ──────────────────────────────────────
+  if (session.pendingTransfer) {
+    return handlePendingTransfer(trimmed);
+  }
   if (session.pendingOpen) {
     return handlePendingOpen(trimmed);
   }
@@ -132,6 +162,7 @@ export async function runCommand(raw: string): Promise<OutputLine[]> {
     case 'cancel':
     case 'c':
       session.pendingOpen = undefined;
+      session.pendingTransfer = undefined;
       session.lastDiscover = [];
       return [dim('  cancelled')];
 
@@ -965,79 +996,202 @@ async function cmdStatus(): Promise<OutputLine[]> {
 // /transfer
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function cmdTransfer(args: string[]): Promise<OutputLine[]> {
-  const sub = args[0]?.toLowerCase();
+async function cmdTransfer(_args: string[]): Promise<OutputLine[]> {
+  // Start guided transfer flow — show wallet tokens
+  const lpcli = new LPCLI();
+  let wallet;
+  try {
+    wallet = await lpcli.getWallet();
+  } catch {
+    return [dim('  wallet not configured — run lpcli init')];
+  }
 
-  if (!sub || sub === 'help') {
+  const balances = await wallet.getBalances();
+  const tokens: TokenOption[] = [];
+
+  // SOL first
+  if (balances.solBalance > 0) {
+    tokens.push({ label: 'SOL', mint: 'SOL', uiAmount: balances.solBalance, decimals: 9 });
+  }
+
+  // SPL tokens
+  for (const t of balances.tokens) {
+    const info = lpcli.tokenRegistry.getCached(t.mint);
+    const symbol = info?.symbol?.toUpperCase() ?? t.mint.slice(0, 6);
+    tokens.push({ label: symbol, mint: t.mint, uiAmount: t.uiAmount, decimals: t.decimals });
+  }
+
+  if (tokens.length === 0) {
+    return [dim('  no tokens in wallet')];
+  }
+
+  session.pendingTransfer = { step: 'token', tokens };
+
+  const lines: OutputLine[] = [
+    bold('  Transfer'),
+    dim('  ────────────────────────────────────────────────────'),
+  ];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    const mintHint = t.mint === 'SOL' ? '' : ` (${t.mint.slice(0, 6)}..${t.mint.slice(-4)})`;
+    lines.push(text(`  ${String(i + 1).padEnd(3)} ${t.label.padEnd(8)} ${t.uiAmount}${mintHint}`));
+  }
+
+  lines.push(blank, bold('  Pick a token by number:'));
+  return lines;
+}
+
+async function handlePendingTransfer(input: string): Promise<OutputLine[]> {
+  const pending = session.pendingTransfer!;
+
+  if (input === '/cancel' || input === 'cancel' || input === 'c') {
+    session.pendingTransfer = undefined;
+    return [dim('  cancelled')];
+  }
+
+  // ── Step 1: pick token ────────────────────────────────────────────────
+  if (pending.step === 'token') {
+    const idx = parseInt(input, 10) - 1;
+    if (isNaN(idx) || idx < 0 || !pending.tokens || idx >= pending.tokens.length) {
+      return [dim(`  pick 1-${pending.tokens?.length ?? 0}`)];
+    }
+    pending.selected = pending.tokens[idx];
+    pending.step = 'recipient';
     return [
-      bold('  Transfer'),
+      text(`  ${pending.selected.label}: ${pending.selected.uiAmount}`),
       blank,
-      text('  /transfer <address> <amount> [--private]'),
-      blank,
-      text('  Sends USDC (funding token) to an address.'),
-      text('  Add --private to route through MagicBlock PER.'),
-      blank,
-      dim('  example: /transfer 7xKp...3mNq 50 --private'),
+      bold('  Recipient address:'),
     ];
   }
 
-  const isPrivate = args.includes('--private');
-  const cleanArgs = args.filter((a) => a !== '--private');
-  const address = cleanArgs[0];
-  const amountStr = cleanArgs[1];
-
-  if (!address || !amountStr) {
-    return [dim('  usage: /transfer <address> <amount> [--private]')];
-  }
-
-  const amount = parseFloat(amountStr);
-  if (isNaN(amount) || amount <= 0) {
-    return [dim('  amount must be a positive number')];
-  }
-
-  try {
-    const lpcli = new LPCLI();
-    const wallet = await lpcli.getWallet();
-    const funding = lpcli.getFundingToken();
-
-    if (isPrivate) {
-      const result = await executePrivateTransfer(wallet, {
-        to: address,
-        amount,
-        mint: funding.mint,
-        decimals: funding.decimals,
-      });
-
-      return [
-        bold('  Private transfer sent!'),
-        blank,
-        text(`  Amount:     ${amount} ${funding.symbol}`),
-        text(`  To:         ${address.slice(0, 12)}..`),
-        text(`  Visibility: private (MagicBlock PER)`),
-        text(`  TX:         ${result.txSignature}`),
-        blank,
-        dim('  No on-chain link between sender and recipient.'),
-      ];
-    } else {
-      const rawAmount = Math.floor(amount * 10 ** funding.decimals);
-      const result = await wallet.transferToken({
-        to: address,
-        mint: funding.mint,
-        amount: rawAmount,
-      });
-
-      return [
-        bold('  Transfer sent!'),
-        blank,
-        text(`  Amount:  ${amount} ${funding.symbol}`),
-        text(`  To:      ${address.slice(0, 12)}..`),
-        text(`  TX:      ${result.signature}`),
-      ];
+  // ── Step 2: recipient ─────────────────────────────────────────────────
+  if (pending.step === 'recipient') {
+    if (!input || input.length < 32) {
+      return [dim('  enter a valid Solana address')];
     }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return [dim(`  transfer failed: ${msg}`)];
+    pending.recipient = input;
+    pending.step = 'amount';
+    return [
+      text(`  To: ${input.slice(0, 12)}..`),
+      blank,
+      bold(`  Amount (max ${pending.selected!.uiAmount} ${pending.selected!.label}):`),
+    ];
   }
+
+  // ── Step 3: amount ────────────────────────────────────────────────────
+  if (pending.step === 'amount') {
+    const amount = parseFloat(input);
+    if (isNaN(amount) || amount <= 0) {
+      return [dim('  enter a positive number')];
+    }
+    if (amount > pending.selected!.uiAmount) {
+      return [dim(`  insufficient balance. have: ${pending.selected!.uiAmount}`)];
+    }
+    pending.amount = amount;
+
+    // SOL can only be public
+    if (pending.selected!.mint === 'SOL') {
+      pending.visibility = 'public';
+      pending.step = 'confirm';
+      return buildTransferConfirm(pending);
+    }
+
+    pending.step = 'visibility';
+    return [
+      text(`  Amount: ${amount} ${pending.selected!.label}`),
+      blank,
+      bold('  Visibility:'),
+      text('  1) public'),
+      text('  2) private (MagicBlock PER)'),
+      blank,
+      bold('  Pick 1 or 2 (enter for public):'),
+    ];
+  }
+
+  // ── Step 4: visibility ────────────────────────────────────────────────
+  if (pending.step === 'visibility') {
+    pending.visibility = (input === '2' || input.toLowerCase() === 'private') ? 'private' : 'public';
+    pending.step = 'confirm';
+    return buildTransferConfirm(pending);
+  }
+
+  // ── Step 5: confirm & execute ─────────────────────────────────────────
+  if (pending.step === 'confirm') {
+    if (input.toLowerCase() !== 'y') {
+      session.pendingTransfer = undefined;
+      return [dim('  aborted')];
+    }
+
+    const { selected, recipient, amount, visibility } = pending;
+    session.pendingTransfer = undefined;
+
+    try {
+      const lpcli = new LPCLI();
+      const wallet = await lpcli.getWallet();
+
+      if (visibility === 'private') {
+        const result = await executePrivateTransfer(wallet, {
+          to: recipient!,
+          amount: amount!,
+          mint: selected!.mint,
+          decimals: selected!.decimals,
+          cluster: lpcli.config.cluster,
+        });
+        return [
+          blank,
+          bold('  Private transfer sent!'),
+          blank,
+          text(`  Amount:     ${amount} ${selected!.label}`),
+          text(`  To:         ${recipient!.slice(0, 12)}..`),
+          text(`  Visibility: private (MagicBlock PER)`),
+          text(`  TX:         ${result.txSignature}`),
+          blank,
+          dim('  No on-chain link between sender and recipient.'),
+        ];
+      } else if (selected!.mint === 'SOL') {
+        const result = await wallet.transferSOL(recipient!, amount!);
+        return [
+          blank,
+          bold('  Transfer sent!'),
+          blank,
+          text(`  Amount:  ${amount} SOL`),
+          text(`  To:      ${recipient!.slice(0, 12)}..`),
+          text(`  TX:      ${result.signature}`),
+        ];
+      } else {
+        const rawAmount = Math.floor(amount! * 10 ** selected!.decimals);
+        const result = await wallet.transferToken({ to: recipient!, mint: selected!.mint, amount: rawAmount });
+        return [
+          blank,
+          bold('  Transfer sent!'),
+          blank,
+          text(`  Amount:  ${amount} ${selected!.label}`),
+          text(`  To:      ${recipient!.slice(0, 12)}..`),
+          text(`  TX:      ${result.signature}`),
+        ];
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return [dim(`  transfer failed: ${msg}`)];
+    }
+  }
+
+  session.pendingTransfer = undefined;
+  return [dim('  something went wrong — try again')];
+}
+
+function buildTransferConfirm(pending: PendingTransfer): OutputLine[] {
+  return [
+    blank,
+    bold('  Confirm transfer:'),
+    text(`  Token:      ${pending.selected!.label}`),
+    text(`  Amount:     ${pending.amount} ${pending.selected!.label}`),
+    text(`  To:         ${pending.recipient!.slice(0, 12)}..`),
+    text(`  Visibility: ${pending.visibility}${pending.visibility === 'private' ? ' (MagicBlock PER)' : ''}`),
+    blank,
+    bold('  y to confirm, anything else to cancel:'),
+  ];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1104,6 +1258,7 @@ async function cmdPrivateFund(args: string[]): Promise<OutputLine[]> {
       amount,
       funding.mint,
       funding.decimals,
+      { cluster: lpcli.config.cluster },
     );
 
     const lines: OutputLine[] = [

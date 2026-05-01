@@ -6,7 +6,15 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    dependencies:
+      bare-runtime-linux-x64:
+        specifier: ^1.28.4
+        version: 1.28.4
+    devDependencies:
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
 
   packages/cli:
     dependencies:
@@ -2214,6 +2222,23 @@ packages:
     resolution: {integrity: sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==}
     engines: {node: 18 || 20 || >=22}
 
+  bare-module-resolve@1.12.1:
+    resolution: {integrity: sha512-hbmAPyFpEq8FoZMd5sFO3u6MC5feluWoGE8YKlA8fCrl6mNtx68Wjg4DTiDJcqRJaovTvOYKfYngoBUnbaT7eg==}
+    peerDependencies:
+      bare-url: '*'
+    peerDependenciesMeta:
+      bare-url:
+        optional: true
+
+  bare-runtime-linux-x64@1.28.4:
+    resolution: {integrity: sha512-qPRAxSdAwmCabTXfvQeiWhLqAYOeh1bnQhfwNShrL2MkuY49Sar4i4ggk3UatjTnYMj1HrWu51U5BXIQWdudmQ==}
+    cpu: [x64]
+    os: [linux]
+    hasBin: true
+
+  bare-semver@1.0.3:
+    resolution: {integrity: sha512-HS/A30bi2+PiRJfU6R4+Kp+6KeLSCSByjYM2iiobOKzLAvtu1CT+S8xWfiU7wz0erknjkUoC+yXy108tzIuP5Q==}
+
   base-x@3.0.11:
     resolution: {integrity: sha512-xz7wQ8xDhdyP7tQxwdteLYeFfS68tSMNCZ/Y37WJ4bhGfKPpqEIlmIyueQHqOyoPhE6xNUqjzRr8ra0eF9VRvA==}
 
@@ -3822,6 +3847,10 @@ packages:
     peerDependencies:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
+
+  require-asset@1.2.1:
+    resolution: {integrity: sha512-wFFxOxJHL/agpiXNDMzDBzC8hnmjJZYW0wDgolojZZkydS76talLlIH+DU3DWjBxQcu0vair30H7V3C4FcLnSg==}
+    engines: {bare: '>=1.10.0'}
 
   require-from-string@2.0.2:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
@@ -6667,6 +6696,18 @@ snapshots:
 
   balanced-match@4.0.4: {}
 
+  bare-module-resolve@1.12.1:
+    dependencies:
+      bare-semver: 1.0.3
+
+  bare-runtime-linux-x64@1.28.4:
+    dependencies:
+      require-asset: 1.2.1
+    transitivePeerDependencies:
+      - bare-url
+
+  bare-semver@1.0.3: {}
+
   base-x@3.0.11:
     dependencies:
       safe-buffer: 5.2.1
@@ -8338,6 +8379,12 @@ snapshots:
     dependencies:
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
+
+  require-asset@1.2.1:
+    dependencies:
+      bare-module-resolve: 1.12.1
+    transitivePeerDependencies:
+      - bare-url
 
   require-from-string@2.0.2: {}
 

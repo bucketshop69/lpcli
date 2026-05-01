@@ -99,7 +99,7 @@ export class MagicBlockClient {
 
   async healthCheck(): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/v1/health`);
+      const res = await fetch(`${this.baseUrl}/health`);
       return res.ok;
     } catch {
       return false;

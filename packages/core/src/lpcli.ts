@@ -240,6 +240,7 @@ export class LPCLI {
       uiAmount,
       funding.mint,
       funding.decimals,
+      { cluster: this.config.cluster },
     );
 
     // 3. Open position from burner
@@ -330,6 +331,7 @@ export class LPCLI {
         mint: funding.mint,
         decimals: funding.decimals,
         visibility: 'private',
+        cluster: this.config.cluster,
       });
       returnTx = result.txSignature;
     }
