@@ -31,7 +31,7 @@ Returns OWS status, wallet availability, and Solana address. If not ready, the e
 
 **Always call this first.** If not ready, guide the user to run `lpcli init`.
 
-## Available MCP Tools
+## Available Tools
 
 ### Meteora DLMM — Liquidity
 
@@ -132,7 +132,7 @@ Withdraw USDC collateral from pacific perps account.
 **Parameters:**
 - `amount` (required): USDC amount
 
-## CLI Commands
+## CLI Usage
 
 ### Setup
 ```bash
@@ -220,7 +220,9 @@ lpcli eliza --local                           # Use local Ollama instead of Nosa
 lpcli eliza --model qwen3:8b                  # Specify LLM model
 ```
 
-## LP Strategy Guide
+## Strategy Guide
+
+### LP Strategy Guide
 
 | Strategy | Distribution | Best when | Risk |
 |----------|-------------|-----------|------|
@@ -268,15 +270,17 @@ lpcli eliza --model qwen3:8b                  # Specify LLM model
 
 ## Configuration
 
-**config.json** (project root):
+**User config** (`~/.config/lpcli/config.json` by default):
 ```json
 {
   "wallet": "lpcli",
   "cluster": "mainnet",
   "fundingToken": { "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "symbol": "USDC", "decimals": 6 },
-  "feeReserveSol": 0.02
+  "feeReserveSol": 0.08
 }
 ```
+
+RPC URLs and other local overrides live in `~/.config/lpcli/.env` with user-private permissions. Do not store private keys in repo files; LPCLI is OWS-only.
 
 **Environment variables** (override config.json):
 
@@ -289,6 +293,10 @@ lpcli eliza --model qwen3:8b                  # Specify LLM model
 | `FUNDING_TOKEN_MINT` | Override funding token mint |
 | `FEE_RESERVE_SOL` | SOL reserved for tx fees (default: 0.02) |
 
+## x402 Payment Flow
+
+LPCLI's x402 server returns HTTP `402 Payment Required` for paid actions. Agents should read the `x-402` payment details, pay the quoted fee, then retry with an `x-402-receipt` header. The open-position endpoint charges 2 bps (0.02%) on the requested LP amount.
+
 ## Important Notes
 
 - Always call `check_ready` (MCP) or run `lpcli init` before wallet operations
@@ -297,7 +305,7 @@ lpcli eliza --model qwen3:8b                  # Specify LLM model
 - The `--amount` flag uses funding token's UI units (200 = 200 USDC, not lamports)
 - The scoring heuristic favors high fee yield + high volume relative to TVL
 - Close is free — never hesitate to exit a bad LP position
-- 0.02 SOL is reserved for transaction fees and never swapped away
+- 0.08 SOL is reserved for transaction fees and never swapped away
 - Position rent (~0.06 SOL) is refunded when you close an LP position
 - Perps require USDC deposited to pacific before trading
 - Funding rates are paid every 8 hours — factor into position holding cost

@@ -103,8 +103,18 @@ server.tool(
     limit: z.number().int().min(1).max(50).default(10).describe('Max results'),
   },
   async ({ token, sort_by, limit }) => {
+    const sortField = {
+      score: 'fee_active_tvl_ratio',
+      fee_yield: 'fee_active_tvl_ratio',
+      volume: 'volume',
+      tvl: 'active_tvl',
+    }[sort_by];
+
     const lpcli = getLpcli();
-    const pools = await lpcli.discoverPools(token, sort_by, limit);
+    const pools = (await lpcli.discoverPools(token, {
+      defaultSort: sortField,
+      pageSize: limit,
+    })).slice(0, limit);
 
     if (pools.length === 0) {
       return { content: [{ type: 'text', text: `No pools found for "${token}".` }] };
@@ -112,10 +122,10 @@ server.tool(
 
     const text = pools.map((p, i) =>
       `${i + 1}. ${p.name}\n` +
-      `   Address: ${p.address}\n` +
-      `   TVL: $${p.tvl.toLocaleString()} | Vol 24h: $${p.volume_24h.toLocaleString()} | APR: ${(p.apr * 100).toFixed(1)}%\n` +
-      `   Bin step: ${p.bin_step} | Score: ${p.score.toFixed(1)} | Momentum: ${p.momentum.toFixed(2)}\n` +
-      (p.has_farm ? `   Farm APR: ${(p.farm_apr * 100).toFixed(1)}%\n` : '')
+      `   Address: ${p.pool_address}\n` +
+      `   TVL: $${p.tvl.toLocaleString()} | Vol 24h: $${p.volume_24h.toLocaleString()} | Fee APR: ${(p.fee_active_tvl_ratio * 365 * 100).toFixed(1)}%\n` +
+      `   Bin step: ${p.bin_step} | Active TVL: $${p.active_tvl.toLocaleString()} | Swaps 24h: ${p.swap_count.toLocaleString()}\n` +
+      (p.has_farm ? '   Farm: yes\n' : '')
     ).join('\n');
 
     return { content: [{ type: 'text', text }] };
@@ -134,17 +144,18 @@ server.tool(
     const lpcli = getLpcli();
     const pool = await lpcli.getPoolInfo(address);
 
+    const feeApr = pool.fee_active_tvl_ratio * 365;
     const text =
       `Pool: ${pool.name}\n` +
-      `Address: ${pool.address}\n` +
+      `Address: ${pool.pool_address}\n` +
       `Tokens: ${pool.token_x} / ${pool.token_y}\n` +
       `Bin step: ${pool.bin_step}\n` +
-      `Current price: ${pool.current_price}\n` +
+      `Current price: ${pool.pool_price}\n` +
       `TVL: $${pool.tvl.toLocaleString()}\n` +
       `Volume 24h: $${pool.volume_24h.toLocaleString()}\n` +
       `Fees 24h: $${pool.fee_24h.toLocaleString()}\n` +
-      `APR: ${(pool.apr * 100).toFixed(1)}% | APY: ${(pool.apy * 100).toFixed(1)}%\n` +
-      (pool.has_farm ? `Farm APR: ${(pool.farm_apr * 100).toFixed(1)}%` : 'No farm');
+      `Fee APR: ${(feeApr * 100).toFixed(1)}%\n` +
+      (pool.has_farm ? 'Farm: yes' : 'No farm');
 
     return { content: [{ type: 'text', text }] };
   }

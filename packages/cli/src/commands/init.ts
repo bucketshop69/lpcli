@@ -14,7 +14,7 @@
  */
 
 import { createInterface } from 'node:readline';
-import { existsSync, writeFileSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 import { DEFAULT_FEE_RESERVE_SOL } from '@lpcli/core';
@@ -124,8 +124,13 @@ function resolveFundingToken(symbol: string): { mint: string; symbol: string; de
 // Config + .env write
 // ---------------------------------------------------------------------------
 
+function getUserConfigDir(): string {
+  return resolve(process.env['XDG_CONFIG_HOME'] ?? resolve(process.env['HOME'] ?? process.cwd(), '.config'), 'lpcli');
+}
+
 function saveConfig(configPath: string, config: object): void {
-  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  mkdirSync(resolve(configPath, '..'), { recursive: true });
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 });
 }
 
 /**
@@ -133,6 +138,7 @@ function saveConfig(configPath: string, config: object): void {
  * Preserves existing entries.
  */
 function saveEnvVar(configDir: string, key: string, value: string): void {
+  mkdirSync(configDir, { recursive: true });
   const envPath = resolve(configDir, '.env');
   let lines: string[] = [];
 
@@ -146,7 +152,8 @@ function saveEnvVar(configDir: string, key: string, value: string): void {
 
   // Remove trailing blank lines, then add final newline
   while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-  writeFileSync(envPath, lines.join('\n') + '\n', 'utf-8');
+  writeFileSync(envPath, lines.join('\n') + '\n', { encoding: 'utf-8', mode: 0o600 });
+  chmodSync(envPath, 0o600);
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +192,7 @@ async function runNonInteractive(args: string[]): Promise<void> {
   const rpcUrl = getFlag(args, '--rpc');
   const fundingSymbol = getFlag(args, '--funding-token') ?? 'USDC';
   const cluster = (getFlag(args, '--cluster') ?? 'mainnet') as 'mainnet' | 'devnet';
-  const configDir = getFlag(args, '--config-dir') ?? process.cwd();
+  const configDir = getFlag(args, '--config-dir') ?? getUserConfigDir();
   const configPath = resolve(configDir, 'config.json');
   const force = hasFlag(args, '--force');
 
@@ -216,7 +223,7 @@ async function runNonInteractive(args: string[]): Promise<void> {
 
 async function runInteractive(): Promise<void> {
   const rl = createRL();
-  const configPath = resolve(process.cwd(), 'config.json');
+  const configPath = resolve(getUserConfigDir(), 'config.json');
 
   console.log('\nChecking for OWS wallet...');
 

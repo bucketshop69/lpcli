@@ -172,9 +172,18 @@ async function handleDiscover(req: IncomingMessage, res: ServerResponse): Promis
 
   const sortBy = (query['sort_by'] ?? 'score') as 'score' | 'fee_yield' | 'volume' | 'tvl';
   const limit = Math.min(parseInt(query['limit'] ?? '10', 10), 50);
+  const sortField = {
+    score: 'fee_active_tvl_ratio',
+    fee_yield: 'fee_active_tvl_ratio',
+    volume: 'volume',
+    tvl: 'active_tvl',
+  }[sortBy];
 
   const lpcli = createLpcli();
-  const pools = await lpcli.discoverPools(token, sortBy, limit);
+  const pools = (await lpcli.discoverPools(token, {
+    defaultSort: sortField,
+    pageSize: limit,
+  })).slice(0, limit);
   json(res, 200, { pools });
 }
 

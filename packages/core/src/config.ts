@@ -9,9 +9,6 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Load .env file if present (Node 20.12+). Silently ignore if missing.
-try { process.loadEnvFile(); } catch { /* no .env — fine */ }
-
 // ============================================================================
 // Types
 // ============================================================================
@@ -33,7 +30,7 @@ export interface LPCLIConfig {
   readRpcUrl: string;
   /** Funding token for auto-swap on LP operations */
   fundingToken: FundingToken;
-  /** SOL reserved for transaction fees (in SOL, e.g. 0.02). Never swapped away. */
+  /** SOL reserved for transaction fees (in SOL, e.g. 0.08). Never swapped away. */
   feeReserveSol: number;
   /** Discover command configuration — gates, sort, page size. */
   discover?: Partial<import('./types.js').DiscoverConfig>;
@@ -49,8 +46,8 @@ export const SOL_MINT = 'So11111111111111111111111111111111111111112';
 /** Lamports per SOL. */
 export const LAMPORTS_PER_SOL = 1_000_000_000;
 
-/** Default fee reserve: 0.02 SOL. */
-export const DEFAULT_FEE_RESERVE_SOL = 0.02;
+/** Default fee reserve: 0.08 SOL. */
+export const DEFAULT_FEE_RESERVE_SOL = 0.08;
 
 /** Position account rent (~0.06 SOL). Refunded on close. Protocol constant, not configurable. */
 export const POSITION_RENT_LAMPORTS = 60_000_000;
@@ -72,6 +69,15 @@ const DEFAULT_FUNDING_TOKEN: FundingToken = {
   decimals: 6,
 };
 
+function getUserConfigDir(): string {
+  return resolve(process.env['XDG_CONFIG_HOME'] ?? resolve(process.env['HOME'] ?? process.cwd(), '.config'), 'lpcli');
+}
+
+function loadEnvFileIfPresent(path: string): void {
+  if (!existsSync(path)) return;
+  try { process.loadEnvFile(path); } catch { /* malformed .env — ignore */ }
+}
+
 // ============================================================================
 // Loader
 // ============================================================================
@@ -92,7 +98,11 @@ function findConfigFile(): string | null {
     dir = parent;
   }
 
-  // 2. Fallback: resolve relative to the package install path.
+  // 2. User-space config for installed/global CLI usage.
+  const userConfig = resolve(getUserConfigDir(), 'config.json');
+  if (existsSync(userConfig)) return userConfig;
+
+  // 3. Fallback: resolve relative to the package install path.
   //    The compiled config.js lives at packages/core/dist/config.js —
   //    walk up to the monorepo root and check there.
   try {
@@ -122,6 +132,7 @@ export function loadConfig(): LPCLIConfig {
 
   const configPath = findConfigFile();
   if (configPath) {
+    loadEnvFileIfPresent(resolve(dirname(configPath), '.env'));
     try {
       file = JSON.parse(readFileSync(configPath, 'utf-8')) as Partial<LPCLIConfig>;
     } catch {

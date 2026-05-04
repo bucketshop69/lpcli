@@ -19,7 +19,10 @@ export const discoverPoolsAction: Action = {
     const lpcli = getLpcli();
     await callback?.({ text: `Searching for the best ${token} DLMM pools...` } as Parameters<HandlerCallback>[0]);
 
-    const pools = await lpcli.discoverPools(token, 'score', 5);
+    const pools = (await lpcli.discoverPools(token, {
+      defaultSort: 'fee_active_tvl_ratio',
+      pageSize: 5,
+    })).slice(0, 5);
 
     if (pools.length === 0) {
       const noResults = `No DLMM pools found for ${token}.`;
@@ -30,10 +33,10 @@ export const discoverPoolsAction: Action = {
     const lines = [`Top ${token} DLMM Pools:\n`];
     for (let i = 0; i < pools.length; i++) {
       const p = pools[i];
-      const apr = p.apr > 0 ? `${p.apr.toFixed(0)}%` : 'N/A';
+      const apr = p.fee_active_tvl_ratio > 0 ? `${(p.fee_active_tvl_ratio * 365 * 100).toFixed(0)}%` : 'N/A';
       const tvl = `$${(p.tvl / 1e6).toFixed(1)}M`;
-      lines.push(`#${i + 1} ${p.name} — Score: ${p.score.toFixed(1)} | APR: ~${apr} | TVL: ${tvl}`);
-      lines.push(`   Address: ${p.address}`);
+      lines.push(`#${i + 1} ${p.name} — Fee APR: ~${apr} | TVL: ${tvl}`);
+      lines.push(`   Address: ${p.pool_address}`);
     }
 
     const result = lines.join('\n');
@@ -42,7 +45,7 @@ export const discoverPoolsAction: Action = {
     return {
       success: true,
       text: result,
-      data: { pools: pools.map(p => ({ name: p.name, address: p.address, score: p.score })) },
+      data: { pools: pools.map(p => ({ name: p.name, address: p.pool_address, feeApr: p.fee_active_tvl_ratio * 365 })) },
     };
   },
   examples: [
